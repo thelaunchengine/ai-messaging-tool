@@ -19,11 +19,8 @@ RUN npx prisma generate
 # Copy rest of source code
 COPY . .
 
-# Build the application for production
-RUN npm run build
-
 # Expose port 3000
 EXPOSE 3000
 
-# Start the application in production mode
-CMD ["sh", "-c", "npm start -- -H 0.0.0.0 -p ${PORT:-3000}"]
+# Start the application in development mode
+CMD ["sh", "-c", "npm run dev -- -H 0.0.0.0 -p ${PORT:-3000}"]
