@@ -103,3 +103,4 @@ The application is automatically deployed to AWS using GitHub Actions when code 
 ## 📝 License
 
 Private project - All rights reserved.
+# Test deployment trigger
