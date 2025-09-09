@@ -1,10 +1,11 @@
 name: Deploy AI Messaging Tool to AWS
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  # Disabled - using specific deploy-frontend.yml and deploy-backend.yml instead
+  # push:
+  #   branches: [ main ]
+  # pull_request:
+  #   branches: [ main ]
   workflow_dispatch:  # Allow manual trigger
 
 env:
