@@ -41,12 +41,10 @@
         {
           "name": "NEXTAUTH_SECRET",
           "value": "your-nextauth-secret-key-here"
-        }
-      ],
-      "secrets": [
+        },
         {
           "name": "DATABASE_URL",
-          "valueFrom": "arn:aws:secretsmanager:us-east-1:957440525184:secret:production-ai-messaging-db-password"
+          "value": "postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging"
         }
       ],
       "logConfiguration": {
