@@ -13,7 +13,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: ai-messaging-frontend
+  ECR_REPOSITORY: production-ai-messaging-frontend
   ECS_SERVICE: production-ai-messaging-frontend-service
   ECS_CLUSTER: production-ai-messaging-cluster
   ECS_TASK_DEFINITION: production-ai-messaging-frontend
