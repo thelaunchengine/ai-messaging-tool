@@ -1,26 +1,62 @@
-# Use Node.js 20 Alpine as base image
-FROM node:20-alpine
+# Multi-stage build for production optimization
+FROM node:20-alpine AS base
 
-# Set working directory
+# Install dependencies only when needed
+FROM base AS deps
 WORKDIR /app
-
-# Copy package files
 COPY package*.json ./
+RUN npm ci --legacy-peer-deps --only=production
 
-# Install all dependencies with legacy peer deps
+# Rebuild the source code only when needed
+FROM base AS builder
+WORKDIR /app
+COPY package*.json ./
 RUN npm ci --legacy-peer-deps
 
-# Copy Prisma schema first
+# Copy Prisma schema and generate client
 COPY prisma ./prisma
-
-# Generate Prisma client
 RUN npx prisma generate
 
-# Copy rest of source code
+# Copy source code
 COPY . .
 
-# Expose port 3000
-EXPOSE 3000
+# Build the application
+RUN npm run build
 
-# Start the application with database migration and pre-compilation
-CMD ["sh", "-c", "echo 'Starting database migration...' && node migrate-db.js && echo 'Migration completed, pre-compiling routes...' && npm run dev -- -H 0.0.0.0 -p ${PORT:-3000} & sleep 30 && curl -s http://localhost:3000/ > /dev/null && curl -s http://localhost:3000/api/auth/providers > /dev/null && curl -s http://localhost:3000/login > /dev/null && echo 'Pre-compilation completed' && wait"]
+# Production image, copy all the files and run next
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Create a non-root user
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+# Copy built application
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+
+# Copy Prisma files
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
+# Copy migration script
+COPY migrate-db.js ./
+
+# Set correct permissions
+RUN chown -R nextjs:nodejs /app
+USER nextjs
+
+# Expose port
+EXPOSE 3000
+ENV PORT=3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:3000/api/health || exit 1
+
+# Start the application
+CMD ["sh", "-c", "echo 'Starting database migration...' && node migrate-db.js && echo 'Starting production server...' && node server.js"]
