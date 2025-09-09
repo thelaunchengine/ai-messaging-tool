@@ -23,4 +23,4 @@ COPY . .
 EXPOSE 3000
 
 # Start the application with database migration
-CMD ["sh", "-c", "node migrate-db.js && npm run dev -- -H 0.0.0.0 -p ${PORT:-3000}"]
+CMD ["sh", "-c", "echo 'Starting database migration...' && node migrate-db.js && echo 'Migration completed, starting app...' && npm run dev -- -H 0.0.0.0 -p ${PORT:-3000}"]
