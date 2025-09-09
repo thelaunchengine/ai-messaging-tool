@@ -44,7 +44,7 @@
         },
         {
           "name": "DATABASE_URL",
-          "value": "postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging"
+          "value": "postgresql://postgres:cDtrtoOqpdkAzMcLSd%401847@103.215.159.51:5432/aimsgdb"
         }
       ],
       "logConfiguration": {
