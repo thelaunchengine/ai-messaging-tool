@@ -22,5 +22,5 @@ COPY . .
 # Expose port 3000
 EXPOSE 3000
 
-# Start the application in development mode
-CMD ["sh", "-c", "npm run dev -- -H 0.0.0.0 -p ${PORT:-3000}"]
+# Start the application with database migration
+CMD ["sh", "-c", "node migrate-db.js && npm run dev -- -H 0.0.0.0 -p ${PORT:-3000}"]
