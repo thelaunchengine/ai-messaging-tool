@@ -9,7 +9,7 @@
   "containerDefinitions": [
     {
       "name": "frontend",
-      "image": "957440525184.dkr.ecr.us-east-1.amazonaws.com/ai-messaging-frontend:latest",
+      "image": "957440525184.dkr.ecr.us-east-1.amazonaws.com/production-ai-messaging-frontend:latest",
       "portMappings": [
         {
           "containerPort": 3000,
@@ -54,16 +54,6 @@
           "awslogs-region": "us-east-1",
           "awslogs-stream-prefix": "ecs"
         }
-      },
-      "healthCheck": {
-        "command": [
-          "CMD-SHELL",
-          "curl -f http://localhost:3000/ || exit 1"
-        ],
-        "interval": 30,
-        "timeout": 5,
-        "retries": 3,
-        "startPeriod": 60
       }
     }
   ]
