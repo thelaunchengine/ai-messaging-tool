@@ -1,0 +1,486 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudWatch Monitoring and Alarms for AI Messaging Tool'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'production'
+    AllowedValues: ['development', 'staging', 'production']
+    Description: 'Environment name'
+
+  ECSStackName:
+    Type: String
+    Default: 'ai-messaging-ecs'
+    Description: 'Name of the ECS stack'
+
+  DatabaseStackName:
+    Type: String
+    Default: 'ai-messaging-database'
+    Description: 'Name of the database stack'
+
+  CacheStackName:
+    Type: String
+    Default: 'ai-messaging-cache'
+    Description: 'Name of the cache stack'
+
+  APIGatewayStackName:
+    Type: String
+    Default: 'ai-messaging-api'
+    Description: 'Name of the API Gateway stack'
+
+  CloudFrontStackName:
+    Type: String
+    Default: 'ai-messaging-cdn'
+    Description: 'Name of the CloudFront stack'
+
+  AlarmEmail:
+    Type: String
+    Default: ''
+    Description: 'Email address for alarm notifications'
+
+  HighCpuThreshold:
+    Type: Number
+    Default: 80
+    MinValue: 1
+    MaxValue: 100
+    Description: 'High CPU utilization threshold percentage'
+
+  HighMemoryThreshold:
+    Type: Number
+    Default: 85
+    MinValue: 1
+    MaxValue: 100
+    Description: 'High memory utilization threshold percentage'
+
+  LowDiskSpaceThreshold:
+    Type: Number
+    Default: 20
+    MinValue: 1
+    MaxValue: 100
+    Description: 'Low disk space threshold percentage'
+
+  HighErrorRateThreshold:
+    Type: Number
+    Default: 5
+    MinValue: 1
+    MaxValue: 100
+    Description: 'High error rate threshold percentage'
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+  HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, '']]
+
+Resources:
+  # SNS Topic for Alarms
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${Environment}-ai-messaging-alarms'
+      DisplayName: !Sub '${Environment} AI Messaging Tool Alarms'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-alarms'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # SNS Topic Policy
+  AlarmTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref AlarmTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudwatch.amazonaws.com
+            Action: SNS:Publish
+            Resource: !Ref AlarmTopic
+
+  # Email Subscription (if provided)
+  AlarmEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlarmEmail
+    Properties:
+      Protocol: email
+      TopicArn: !Ref AlarmTopic
+      Endpoint: !Ref AlarmEmail
+
+  # CloudWatch Dashboard
+  MonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${Environment}-ai-messaging-dashboard'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/ECS", "CPUUtilization", "ServiceName", "${ECSStackName}-ai-messaging-backend-service", "ClusterName", "${ECSStackName}-ai-messaging-cluster" ],
+                  [ ".", "MemoryUtilization", ".", ".", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "ECS Service Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", "${DatabaseStackName}-ai-messaging-db" ],
+                  [ ".", "DatabaseConnections", ".", "." ],
+                  [ ".", "FreeableMemory", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "RDS Database Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/ElastiCache", "CPUUtilization", "CacheClusterId", "${CacheStackName}-ai-messaging-redis" ],
+                  [ ".", "CurrConnections", ".", "." ],
+                  [ ".", "FreeableMemory", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "ElastiCache Redis Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/ApiGateway", "Count", "ApiName", "${APIGatewayStackName}-ai-messaging-api" ],
+                  [ ".", "4XXError", ".", "." ],
+                  [ ".", "5XXError", ".", "." ],
+                  [ ".", "Latency", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "API Gateway Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 12,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/CloudFront", "Requests", "DistributionId", "${CloudFrontStackName}-ai-messaging-cloudfront-distribution-id" ],
+                  [ ".", "BytesDownloaded", ".", "." ],
+                  [ ".", "4xxErrorRate", ".", "." ],
+                  [ ".", "5xxErrorRate", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-1",
+                "title": "CloudFront Metrics",
+                "period": 300
+              }
+            }
+          ]
+        }
+
+  # ECS Alarms
+  ECSHighCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ai-messaging-ecs-high-cpu'
+      AlarmDescription: 'ECS service CPU utilization is too high'
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !Ref HighCpuThreshold
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ServiceName
+          Value: !ImportValue
+            Fn::Sub: '${ECSStackName}-ai-messaging-backend-service-name'
+        - Name: ClusterName
+          Value: !ImportValue
+            Fn::Sub: '${ECSStackName}-ai-messaging-ecs-cluster-name'
+      AlarmActions:
+        - !Ref AlarmTopic
+      TreatMissingData: notBreaching
+
+  ECSHighMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ai-messaging-ecs-high-memory'
+      AlarmDescription: 'ECS service memory utilization is too high'
+      MetricName: MemoryUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !Ref HighMemoryThreshold
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ServiceName
+          Value: !ImportValue
+            Fn::Sub: '${ECSStackName}-ai-messaging-backend-service-name'
+        - Name: ClusterName
+          Value: !ImportValue
+            Fn::Sub: '${ECSStackName}-ai-messaging-ecs-cluster-name'
+      AlarmActions:
+        - !Ref AlarmTopic
+      TreatMissingData: notBreaching
+
+  # RDS Alarms
+  RDSHighCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ai-messaging-rds-high-cpu'
+      AlarmDescription: 'RDS database CPU utilization is too high'
+      MetricName: CPUUtilization
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !Ref HighCpuThreshold
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !ImportValue
+            Fn::Sub: '${DatabaseStackName}-ai-messaging-db-instance-id'
+      AlarmActions:
+        - !Ref AlarmTopic
+      TreatMissingData: notBreaching
+
+  RDSLowFreeableMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ai-messaging-rds-low-memory'
+      AlarmDescription: 'RDS database freeable memory is too low'
+      MetricName: FreeableMemory
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 100000000
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !ImportValue
+            Fn::Sub: '${DatabaseStackName}-ai-messaging-db-instance-id'
+      AlarmActions:
+        - !Ref AlarmTopic
+      TreatMissingData: notBreaching
+
+  RDSHighConnectionsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ai-messaging-rds-high-connections'
+      AlarmDescription: 'RDS database connection count is too high'
+      MetricName: DatabaseConnections
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !ImportValue
+            Fn::Sub: '${DatabaseStackName}-ai-messaging-db-instance-id'
+      AlarmActions:
+        - !Ref AlarmTopic
+      TreatMissingData: notBreaching
+
+  # ElastiCache Alarms
+  CacheHighCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ai-messaging-cache-high-cpu'
+      AlarmDescription: 'ElastiCache CPU utilization is too high'
+      MetricName: CPUUtilization
+      Namespace: AWS/ElastiCache
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !Ref HighCpuThreshold
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: CacheClusterId
+          Value: !ImportValue
+            Fn::Sub: '${CacheStackName}-ai-messaging-cache-replication-group-id'
+      AlarmActions:
+        - !Ref AlarmTopic
+      TreatMissingData: notBreaching
+
+  CacheLowFreeableMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ai-messaging-cache-low-memory'
+      AlarmDescription: 'ElastiCache freeable memory is too low'
+      MetricName: FreeableMemory
+      Namespace: AWS/ElastiCache
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 100000000
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: CacheClusterId
+          Value: !ImportValue
+            Fn::Sub: '${CacheStackName}-ai-messaging-cache-replication-group-id'
+      AlarmActions:
+        - !Ref AlarmTopic
+      TreatMissingData: notBreaching
+
+  # API Gateway Alarms
+  APIGatewayHighErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ai-messaging-api-high-error-rate'
+      AlarmDescription: 'API Gateway error rate is too high'
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !ImportValue
+            Fn::Sub: '${APIGatewayStackName}-ai-messaging-api-gateway-id'
+      AlarmActions:
+        - !Ref AlarmTopic
+      TreatMissingData: notBreaching
+
+  APIGatewayHighLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ai-messaging-api-high-latency'
+      AlarmDescription: 'API Gateway latency is too high'
+      MetricName: Latency
+      Namespace: AWS/ApiGateway
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !ImportValue
+            Fn::Sub: '${APIGatewayStackName}-ai-messaging-api-gateway-id'
+      AlarmActions:
+        - !Ref AlarmTopic
+      TreatMissingData: notBreaching
+
+  # CloudFront Alarms
+  CloudFrontHighErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ai-messaging-cloudfront-high-error-rate'
+      AlarmDescription: 'CloudFront error rate is too high'
+      MetricName: 4xxErrorRate
+      Namespace: AWS/CloudFront
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DistributionId
+          Value: !ImportValue
+            Fn::Sub: '${CloudFrontStackName}-ai-messaging-cloudfront-distribution-id'
+      AlarmActions:
+        - !Ref AlarmTopic
+      TreatMissingData: notBreaching
+
+  # Custom Metrics
+  CustomMetricNamespace:
+    Type: AWS::CloudWatch::MetricStream
+    Properties:
+      Name: !Sub '${Environment}-ai-messaging-custom-metrics'
+      IncludeFilters:
+        - Namespace: 'AI-Messaging-Tool'
+      OutputFormat: json
+      RoleArn: !GetAtt MetricStreamRole.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-custom-metrics'
+
+  # IAM Role for Metric Stream
+  MetricStreamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudwatch.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchFullAccess
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-metric-stream-role'
+
+  # CloudWatch Log Groups
+  MonitoringLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/monitoring/${Environment}-ai-messaging'
+      RetentionInDays: !If [IsProduction, 30, 7]
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-monitoring-logs'
+
+Outputs:
+  AlarmTopicArn:
+    Description: 'SNS Topic ARN for Alarms'
+    Value: !Ref AlarmTopic
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-alarm-topic-arn'
+
+  DashboardURL:
+    Description: 'CloudWatch Dashboard URL'
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${Environment}-ai-messaging-dashboard'
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-dashboard-url'
+
+  MonitoringLogGroupName:
+    Description: 'Monitoring Log Group Name'
+    Value: !Ref MonitoringLogGroup
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-monitoring-log-group'
+

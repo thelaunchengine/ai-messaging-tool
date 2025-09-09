@@ -1,0 +1,102 @@
+/* Custom Color Scheme Utility Classes */
+
+/* Background Colors */
+.bg-button-primary {
+  background-color: #6200ff !important;
+}
+
+.bg-section-light-blue {
+  background-color: #e6f3ff !important;
+}
+
+.bg-button-hover {
+  background-color: #4a00cc !important;
+}
+
+/* Text Colors */
+.text-primary-color {
+  color: #0f172a !important;
+}
+
+.text-paragraph-color {
+  color: #9095a4 !important;
+}
+
+.text-icon-color {
+  color: #71767b !important;
+}
+
+/* Border Colors */
+.border-button-primary {
+  border-color: #6200ff !important;
+}
+
+.border-icon-color {
+  border-color: #71767b !important;
+}
+
+/* Hover States */
+.hover\:bg-button-hover:hover {
+  background-color: #4a00cc !important;
+}
+
+.hover\:text-button-hover:hover {
+  color: #4a00cc !important;
+}
+
+.hover\:border-button-hover:hover {
+  border-color: #4a00cc !important;
+}
+
+/* Focus States */
+.focus\:ring-button-primary:focus {
+  --tw-ring-color: #6200ff !important;
+}
+
+/* Shadow Colors */
+.shadow-button-primary {
+  box-shadow: 0 4px 12px rgba(98, 0, 255, 0.3) !important;
+}
+
+.shadow-button-hover {
+  box-shadow: 0 6px 16px rgba(98, 0, 255, 0.4) !important;
+}
+
+/* Font Family */
+.font-poppins {
+  font-family: 'Poppins', Inter, Roboto, Arial, sans-serif !important;
+}
+
+/* Component-specific styles */
+.custom-button {
+  background-color: #6200ff;
+  color: #ffffff;
+  font-family: 'Poppins', Inter, Roboto, Arial, sans-serif;
+  transition: all 0.2s ease;
+}
+
+.custom-button:hover {
+  background-color: #4a00cc;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(98, 0, 255, 0.4);
+}
+
+.custom-section {
+  background-color: #e6f3ff;
+  padding: 2rem;
+  border-radius: 8px;
+}
+
+.custom-text-primary {
+  color: #0f172a;
+  font-family: 'Poppins', Inter, Roboto, Arial, sans-serif;
+}
+
+.custom-text-paragraph {
+  color: #9095a4;
+  font-family: 'Poppins', Inter, Roboto, Arial, sans-serif;
+}
+
+.custom-icon {
+  color: #71767b;
+}

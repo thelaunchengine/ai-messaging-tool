@@ -1,0 +1,351 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ECR Repositories for AI Messaging Tool Container Images'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'production'
+    AllowedValues: ['development', 'staging', 'production']
+    Description: 'Environment name'
+
+  ImageTagMutability:
+    Type: String
+    Default: 'MUTABLE'
+    AllowedValues: ['MUTABLE', 'IMMUTABLE']
+    Description: 'Image tag mutability setting'
+
+  ScanOnPush:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 'Enable image scanning on push'
+
+  LifecyclePolicyEnabled:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 'Enable lifecycle policy'
+
+  MaxImageCount:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    MaxValue: 100
+    Description: 'Maximum number of images to keep'
+
+  ExpirationDays:
+    Type: Number
+    Default: 30
+    MinValue: 1
+    MaxValue: 365
+    Description: 'Days before untagged images expire'
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+  IsScanEnabled: !Equals [!Ref ScanOnPush, 'true']
+  IsLifecycleEnabled: !Equals [!Ref LifecyclePolicyEnabled, 'true']
+
+Resources:
+  # Backend Repository
+  BackendRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${Environment}-ai-messaging-backend'
+      ImageTagMutability: !Ref ImageTagMutability
+      ImageScanningConfiguration:
+        ScanOnPush: !If [IsScanEnabled, true, false]
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy: !If
+        - IsLifecycleEnabled
+        - LifecyclePolicyText: !Sub |
+            {
+              "rules": [
+                {
+                  "rulePriority": 1,
+                  "description": "Keep last ${MaxImageCount} images",
+                  "selection": {
+                    "tagStatus": "tagged",
+                    "tagPrefixList": ["v", "latest"],
+                    "countType": "imageCountMoreThan",
+                    "countNumber": ${MaxImageCount}
+                  },
+                  "action": {
+                    "type": "expire"
+                  }
+                },
+                {
+                  "rulePriority": 2,
+                  "description": "Delete untagged images older than ${ExpirationDays} days",
+                  "selection": {
+                    "tagStatus": "untagged",
+                    "countType": "sinceImagePushed",
+                    "countUnit": "days",
+                    "countNumber": ${ExpirationDays}
+                  },
+                  "action": {
+                    "type": "expire"
+                  }
+                }
+              ]
+            }
+        - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-backend'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: 'Backend Container Images'
+
+  # Frontend Repository
+  FrontendRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${Environment}-ai-messaging-frontend'
+      ImageTagMutability: !Ref ImageTagMutability
+      ImageScanningConfiguration:
+        ScanOnPush: !If [IsScanEnabled, true, false]
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy: !If
+        - IsLifecycleEnabled
+        - LifecyclePolicyText: !Sub |
+            {
+              "rules": [
+                {
+                  "rulePriority": 1,
+                  "description": "Keep last ${MaxImageCount} images",
+                  "selection": {
+                    "tagStatus": "tagged",
+                    "tagPrefixList": ["v", "latest"],
+                    "countType": "imageCountMoreThan",
+                    "countNumber": ${MaxImageCount}
+                  },
+                  "action": {
+                    "type": "expire"
+                  }
+                },
+                {
+                  "rulePriority": 2,
+                  "description": "Delete untagged images older than ${ExpirationDays} days",
+                  "selection": {
+                    "tagStatus": "untagged",
+                    "countType": "sinceImagePushed",
+                    "countUnit": "days",
+                    "countNumber": ${ExpirationDays}
+                  },
+                  "action": {
+                    "type": "expire"
+                  }
+                }
+              ]
+            }
+        - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-frontend'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: 'Frontend Container Images'
+
+  # Worker Repository
+  WorkerRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${Environment}-ai-messaging-worker'
+      ImageTagMutability: !Ref ImageTagMutability
+      ImageScanningConfiguration:
+        ScanOnPush: !If [IsScanEnabled, true, false]
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy: !If
+        - IsLifecycleEnabled
+        - LifecyclePolicyText: !Sub |
+            {
+              "rules": [
+                {
+                  "rulePriority": 1,
+                  "description": "Keep last ${MaxImageCount} images",
+                  "selection": {
+                    "tagStatus": "tagged",
+                    "tagPrefixList": ["v", "latest"],
+                    "countType": "imageCountMoreThan",
+                    "countNumber": ${MaxImageCount}
+                  },
+                  "action": {
+                    "type": "expire"
+                  }
+                },
+                {
+                  "rulePriority": 2,
+                  "description": "Delete untagged images older than ${ExpirationDays} days",
+                  "selection": {
+                    "tagStatus": "untagged",
+                    "countType": "sinceImagePushed",
+                    "countUnit": "days",
+                    "countNumber": ${ExpirationDays}
+                  },
+                  "action": {
+                    "type": "expire"
+                  }
+                }
+              ]
+            }
+        - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-worker'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: 'Worker Container Images'
+
+  # IAM Role for ECS Tasks to access ECR
+  ECRTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ECRAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource:
+                  - !GetAtt BackendRepository.Arn
+                  - !GetAtt FrontendRepository.Arn
+                  - !GetAtt WorkerRepository.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-ecr-task-role'
+
+  # IAM Role for CI/CD to push images
+  ECRPushRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Sub '${Environment}-ai-messaging-ecr-push'
+      Policies:
+        - PolicyName: ECRPushAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:BatchDeleteImage
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                Resource:
+                  - !Sub '${BackendRepository.Arn}/*'
+                  - !Sub '${FrontendRepository.Arn}/*'
+                  - !Sub '${WorkerRepository.Arn}/*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-ecr-push-role'
+
+  # CloudWatch Log Groups for ECR
+  ECRLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/ecr/${Environment}-ai-messaging'
+      RetentionInDays: !If [IsProduction, 30, 7]
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-ecr-logs'
+
+Outputs:
+  BackendRepositoryURI:
+    Description: 'Backend Repository URI'
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${BackendRepository}'
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-backend-repository-uri'
+
+  BackendRepositoryArn:
+    Description: 'Backend Repository ARN'
+    Value: !GetAtt BackendRepository.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-backend-repository-arn'
+
+  FrontendRepositoryURI:
+    Description: 'Frontend Repository URI'
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${FrontendRepository}'
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-frontend-repository-uri'
+
+  FrontendRepositoryArn:
+    Description: 'Frontend Repository ARN'
+    Value: !GetAtt FrontendRepository.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-frontend-repository-arn'
+
+  WorkerRepositoryURI:
+    Description: 'Worker Repository URI'
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${WorkerRepository}'
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-worker-repository-uri'
+
+  WorkerRepositoryArn:
+    Description: 'Worker Repository ARN'
+    Value: !GetAtt WorkerRepository.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-worker-repository-arn'
+
+  ECRTaskRoleArn:
+    Description: 'ECR Task Role ARN'
+    Value: !GetAtt ECRTaskRole.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-ecr-task-role-arn'
+
+  ECRPushRoleArn:
+    Description: 'ECR Push Role ARN'
+    Value: !GetAtt ECRPushRole.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-ecr-push-role-arn'
+
+  ECRRegistryId:
+    Description: 'ECR Registry ID'
+    Value: !Ref AWS::AccountId
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-ecr-registry-id'
+

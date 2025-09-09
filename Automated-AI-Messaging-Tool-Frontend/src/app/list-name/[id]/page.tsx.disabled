@@ -1,0 +1,77 @@
+import { notFound } from 'next/navigation';
+import { Box, Typography } from '@mui/material';
+import WebsitesDataTable from '../../../components/WebsitesDataTable';
+
+async function getFileData(id: string) {
+  try {
+    // Use relative URL for server-side fetch in Next.js
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const res = await fetch(`${baseUrl}/api/upload/${id}`, {
+      cache: 'no-store'
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.fileUpload;
+  } catch (error) {
+    console.error('Error fetching file data:', error);
+    return null;
+  }
+}
+
+export default async function ListNameDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const fileUpload = await getFileData(id);
+  if (!fileUpload) return notFound();
+
+  return (
+    <Box sx={{ p: { xs: 2, md: 4 } }}>
+      <Typography variant="h4" mb={3}>
+        {fileUpload.originalName}
+      </Typography>
+      
+      {/* File Upload Status */}
+      <Box sx={{ mb: 4, p: 3, bgcolor: 'background.paper', borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+        <Typography variant="h6" mb={2}>Processing Status</Typography>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 2 }}>
+          <Box>
+            <Typography variant="body2" color="text.secondary">Status</Typography>
+            <Typography variant="body1" sx={{ 
+              color: fileUpload.status === 'COMPLETED' ? 'success.main' : 
+                     fileUpload.status === 'FAILED' ? 'error.main' : 
+                     fileUpload.status === 'PROCESSING' ? 'warning.main' : 'text.primary'
+            }}>
+              {fileUpload.status}
+            </Typography>
+          </Box>
+          <Box>
+            <Typography variant="body2" color="text.secondary">Total Websites</Typography>
+            <Typography variant="body1">{fileUpload.totalWebsites.toLocaleString()}</Typography>
+          </Box>
+          <Box>
+            <Typography variant="body2" color="text.secondary">Processed</Typography>
+            <Typography variant="body1">{fileUpload.processedWebsites.toLocaleString()} / {fileUpload.totalWebsites.toLocaleString()}</Typography>
+          </Box>
+        </Box>
+        
+        {fileUpload.processingStartedAt && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body2" color="text.secondary">
+              Started: {new Date(fileUpload.processingStartedAt).toLocaleString()}
+            </Typography>
+          </Box>
+        )}
+        
+        {fileUpload.processingCompletedAt && (
+          <Box sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Completed: {new Date(fileUpload.processingCompletedAt).toLocaleString()}
+            </Typography>
+          </Box>
+        )}
+      </Box>
+
+      {/* Optimized Websites Data Table */}
+      <WebsitesDataTable fileUploadId={id} />
+    </Box>
+  );
+} 

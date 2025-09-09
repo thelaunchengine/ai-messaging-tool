@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Step 1: ECS Fargate Cluster for AI Messaging Tool'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'production'
+    AllowedValues: ['development', 'staging', 'production']
+    Description: 'Environment name'
+
+Resources:
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${Environment}-ai-messaging-cluster'
+      CapacityProviders:
+        - FARGATE
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+Outputs:
+  ClusterName:
+    Description: 'ECS Cluster Name'
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-cluster-name'
+  
+  ClusterArn:
+    Description: 'ECS Cluster ARN'
+    Value: !GetAtt ECSCluster.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-cluster-arn'

@@ -1,0 +1,50 @@
+{
+    "family": "production-ai-messaging-frontend",
+    "taskRoleArn": "arn:aws:iam::957440525184:role/ai-messaging-ecs-TaskRole-iViLMEuEY7i6",
+    "executionRoleArn": "arn:aws:iam::957440525184:role/ai-messaging-ecr-ECRTaskRole-fP6EnUKQZc84",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": ["FARGATE"],
+    "cpu": "512",
+    "memory": "1024",
+    "containerDefinitions": [
+        {
+            "name": "frontend",
+            "image": "957440525184.dkr.ecr.us-east-1.amazonaws.com/production-ai-messaging-frontend:v2",
+            "cpu": 0,
+            "portMappings": [
+                {
+                    "containerPort": 3000,
+                    "hostPort": 3000,
+                    "protocol": "tcp"
+                }
+            ],
+            "essential": true,
+            "environment": [
+                {
+                    "name": "NEXT_PUBLIC_BACKEND_URL",
+                    "value": "http://production-ai-messaging-alb-1795060974.us-east-1.elb.amazonaws.com:8000"
+                },
+                {
+                    "name": "NEXTAUTH_URL",
+                    "value": "http://production-ai-messaging-alb-1795060974.us-east-1.elb.amazonaws.com:3000"
+                },
+                {
+                    "name": "NEXTAUTH_SECRET",
+                    "value": "your-nextauth-secret-key-here"
+                },
+                {
+                    "name": "NEXT_PUBLIC_BASE_URL",
+                    "value": "http://production-ai-messaging-alb-1795060974.us-east-1.elb.amazonaws.com:3000"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/aws/ecs/production-ai-messaging-frontend",
+                    "awslogs-region": "us-east-1",
+                    "awslogs-stream-prefix": "frontend"
+                }
+            }
+        }
+    ]
+}

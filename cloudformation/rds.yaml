@@ -1,0 +1,267 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'RDS PostgreSQL Database for AI Messaging Tool'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'production'
+    AllowedValues: ['development', 'staging', 'production']
+    Description: 'Environment name'
+
+  VPCStackName:
+    Type: String
+    Default: 'ai-messaging-vpc'
+    Description: 'Name of the VPC stack'
+
+  DBInstanceClass:
+    Type: String
+    Default: 'db.t3.small'
+    AllowedValues: ['db.t3.micro', 'db.t3.small', 'db.t3.medium', 'db.t3.large']
+    Description: 'Database instance class'
+
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+    MinValue: 20
+    MaxValue: 1000
+    Description: 'Database allocated storage in GB'
+
+  DBName:
+    Type: String
+    Default: 'ai_messaging'
+    Description: 'Database name'
+
+  DBUsername:
+    Type: String
+    Default: 'postgres'
+    Description: 'Database master username'
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Description: 'Database master password'
+
+  MultiAZ:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 'Enable Multi-AZ deployment'
+
+  BackupRetentionPeriod:
+    Type: Number
+    Default: 7
+    MinValue: 0
+    MaxValue: 35
+    Description: 'Backup retention period in days'
+
+  PreferredBackupWindow:
+    Type: String
+    Default: '03:00-04:00'
+    Description: 'Preferred backup window (UTC)'
+
+  PreferredMaintenanceWindow:
+    Type: String
+    Default: 'sun:04:00-sun:05:00'
+    Description: 'Preferred maintenance window (UTC)'
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+  IsMultiAZ: !Equals [!Ref MultiAZ, 'true']
+
+Resources:
+  # DB Parameter Group
+  DBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Family: postgres15
+      Description: 'Parameter group for AI Messaging Tool PostgreSQL'
+      Parameters:
+        shared_preload_libraries: 'pg_stat_statements'
+        log_statement: 'all'
+        log_min_duration_statement: '1000'
+        log_checkpoints: '1'
+        log_connections: '1'
+        log_disconnections: '1'
+        log_lock_waits: '1'
+        log_temp_files: '0'
+        log_autovacuum_min_duration: '0'
+        log_error_verbosity: 'default'
+        log_line_prefix: '%t:%r:%u@%d:[%p]:'
+        log_timezone: 'UTC'
+        timezone: 'UTC'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-db-params'
+
+  # DB Option Group (commented out - not available in all regions)
+  # DBOptionGroup:
+  #   Type: AWS::RDS::DBOptionGroup
+  #   Properties:
+  #     EngineName: postgres
+  #     MajorEngineVersion: '15'
+  #     OptionGroupDescription: 'Option group for AI Messaging Tool PostgreSQL'
+  #     Tags:
+  #       - Key: Name
+  #         Value: !Sub '${Environment}-ai-messaging-db-options'
+
+  # DB Subnet Group (imported from VPC stack)
+  # DatabaseSubnetGroup:
+  #   Type: AWS::RDS::DBSubnetGroup
+  #   Properties:
+  #     DBSubnetGroupDescription: 'Subnet group for AI Messaging Tool database'
+  #     SubnetIds:
+  #       - !ImportValue
+  #         Fn::Sub: '${Environment}-ai-messaging-database-subnet-1-id'
+  #       - !ImportValue
+  #         Fn::Sub: '${Environment}-ai-messaging-database-subnet-2-id'
+  #     Tags:
+  #       - Key: Name
+  #         Value: !Sub '${Environment}-ai-messaging-db-subnet-group'
+
+  # RDS Instance
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub '${Environment}-ai-messaging-db'
+      DBName: !Ref DBName
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: postgres
+      EngineVersion: '15.14'
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      AllocatedStorage: !Ref DBAllocatedStorage
+      MaxAllocatedStorage: !If [IsProduction, 100, 50]
+      StorageType: gp2
+      StorageEncrypted: true
+      MultiAZ: !If [IsMultiAZ, true, false]
+      PubliclyAccessible: false
+      VPCSecurityGroups:
+        - !ImportValue
+          Fn::Sub: '${Environment}-ai-messaging-db-sg-id'
+      DBSubnetGroupName: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-db-subnet-group-name'
+      DBParameterGroupName: !Ref DBParameterGroup
+      BackupRetentionPeriod: !Ref BackupRetentionPeriod
+      PreferredBackupWindow: !Ref PreferredBackupWindow
+      PreferredMaintenanceWindow: !Ref PreferredMaintenanceWindow
+      AutoMinorVersionUpgrade: true
+      DeletionProtection: !If [IsProduction, true, false]
+      MonitoringInterval: 60
+      MonitoringRoleArn: !GetAtt MonitoringRole.Arn
+      # PerformanceInsightsEnabled: true
+      # PerformanceInsightsRetentionPeriod: !If [IsProduction, 731, 7]
+      EnableCloudwatchLogsExports:
+        - postgresql
+        - upgrade
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-db'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Monitoring Role for Enhanced Monitoring
+  MonitoringRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: monitoring.rds.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-rds-monitoring-role'
+
+  # CloudWatch Log Group - Commented out as RDS creates this automatically
+  # DBLogGroup:
+  #   Type: AWS::Logs::LogGroup
+  #   Properties:
+  #     LogGroupName: !Sub '/aws/rds/instance/${Environment}-ai-messaging-db/postgresql'
+  #     RetentionInDays: !If [IsProduction, 30, 7]
+  #     Tags:
+  #       - Key: Name
+  #         Value: !Sub '${Environment}-ai-messaging-db-logs'
+
+  # Read Replica (Production only)
+  DBReadReplica:
+    Type: AWS::RDS::DBInstance
+    Condition: IsProduction
+    Properties:
+      DBInstanceIdentifier: !Sub '${Environment}-ai-messaging-db-read-replica'
+      SourceDBInstanceIdentifier: !Ref DBInstance
+      DBInstanceClass: !Ref DBInstanceClass
+      PubliclyAccessible: false
+      VPCSecurityGroups:
+        - !ImportValue
+          Fn::Sub: '${Environment}-ai-messaging-db-sg-id'
+      # DBSubnetGroupName: !ImportValue
+      #   Fn::Sub: '${Environment}-ai-messaging-db-subnet-group-name'
+      AutoMinorVersionUpgrade: true
+      DeletionProtection: false
+      MonitoringInterval: 60
+      MonitoringRoleArn: !GetAtt MonitoringRole.Arn
+      # PerformanceInsightsEnabled: true
+      # PerformanceInsightsRetentionPeriod: 7
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-db-read-replica'
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  DBInstanceId:
+    Description: 'Database Instance ID'
+    Value: !Ref DBInstance
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-db-instance-id'
+
+  DBEndpoint:
+    Description: 'Database Endpoint'
+    Value: !GetAtt DBInstance.Endpoint.Address
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-db-endpoint'
+
+  DBPort:
+    Description: 'Database Port'
+    Value: !GetAtt DBInstance.Endpoint.Port
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-db-port'
+
+  DBName:
+    Description: 'Database Name'
+    Value: !Ref DBName
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-db-name'
+
+  DBUsername:
+    Description: 'Database Username'
+    Value: !Ref DBUsername
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-db-username'
+
+  DBPassword:
+    Description: 'Database Password'
+    Value: !Ref DBPassword
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-db-password'
+
+  ReadReplicaEndpoint:
+    Condition: IsProduction
+    Description: 'Read Replica Endpoint'
+    Value: !GetAtt DBReadReplica.Endpoint.Address
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-db-read-replica-endpoint'
+
+  # DBSubnetGroupName:
+  #   Description: 'Database Subnet Group Name'
+  #   Value: !ImportValue
+  #     Fn::Sub: '${Environment}-ai-messaging-db-subnet-group-name'
+  #   Export:
+  #     Name: !Sub '${Environment}-ai-messaging-db-subnet-group-name'

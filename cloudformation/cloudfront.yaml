@@ -1,0 +1,339 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFront CDN for AI Messaging Tool Frontend'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'production'
+    AllowedValues: ['development', 'staging', 'production']
+    Description: 'Environment name'
+
+  StorageStackName:
+    Type: String
+    Default: 'ai-messaging-storage'
+    Description: 'Name of the storage stack'
+
+  DomainName:
+    Type: String
+    Default: ''
+    Description: 'Custom domain name (optional)'
+
+  CertificateArn:
+    Type: String
+    Default: ''
+    Description: 'SSL Certificate ARN (optional)'
+
+  PriceClass:
+    Type: String
+    Default: 'PriceClass_100'
+    AllowedValues: ['PriceClass_100', 'PriceClass_200', 'PriceClass_All']
+    Description: 'CloudFront price class'
+
+  DefaultRootObject:
+    Type: String
+    Default: 'index.html'
+    Description: 'Default root object'
+
+  ErrorResponseCode:
+    Type: Number
+    Default: 404
+    MinValue: 400
+    MaxValue: 599
+    Description: 'Error response code for SPA routing'
+
+  ErrorResponsePagePath:
+    Type: String
+    Default: '/index.html'
+    Description: 'Error response page path for SPA routing'
+
+  CacheTTL:
+    Type: Number
+    Default: 86400
+    MinValue: 0
+    MaxValue: 31536000
+    Description: 'Default cache TTL in seconds'
+
+  MaxTTL:
+    Type: Number
+    Default: 31536000
+    MinValue: 0
+    MaxValue: 31536000
+    Description: 'Maximum cache TTL in seconds'
+
+  MinTTL:
+    Type: Number
+    Default: 0
+    MinValue: 0
+    MaxValue: 31536000
+    Description: 'Minimum cache TTL in seconds'
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+  HasCustomDomain: !Not [!Equals [!Ref DomainName, '']]
+  HasCertificate: !Not [!Equals [!Ref CertificateArn, '']]
+
+Resources:
+  # CloudFront Distribution
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases: !If
+          - HasCustomDomain
+          - [!Ref DomainName]
+          - !Ref AWS::NoValue
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+          CachedMethods: [GET, HEAD, OPTIONS]
+          Compress: true
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: none
+            Headers:
+              - Authorization
+              - CloudFront-Forwarded-Proto
+              - CloudFront-Is-Desktop-Viewer
+              - CloudFront-Is-Mobile-Viewer
+              - CloudFront-Is-Tablet-Viewer
+              - CloudFront-Viewer-Country
+          DefaultTTL: !Ref CacheTTL
+          MaxTTL: !Ref MaxTTL
+          MinTTL: !Ref MinTTL
+        DefaultRootObject: !Ref DefaultRootObject
+        Enabled: true
+        HttpVersion: http2
+        Origins:
+          - Id: S3Origin
+            DomainName: !ImportValue
+              Fn::Sub: '${Environment}-ai-messaging-frontend-bucket'
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}'
+        PriceClass: !Ref PriceClass
+        ViewerCertificate: !If
+          - HasCertificate
+          - AcmCertificateArn: !Ref CertificateArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
+        CustomErrorResponses:
+          - ErrorCode: !Ref ErrorResponseCode
+            ResponseCode: 200
+            ResponsePagePath: !Ref ErrorResponsePagePath
+            ErrorCachingMinTTL: 300
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: !Ref ErrorResponsePagePath
+            ErrorCachingMinTTL: 300
+        Logging:
+          Bucket: !GetAtt CloudFrontLogsBucket.DomainName
+          Prefix: !Sub '${Environment}-ai-messaging-frontend/'
+          IncludeCookies: false
+        WebACLId: !If
+          - IsProduction
+          - !Ref WebACL
+          - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-cloudfront'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudFront Origin Access Identity
+  CloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Sub 'OAI for ${Environment} AI Messaging Tool frontend'
+
+  # S3 Bucket Policy for CloudFront
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-frontend-bucket'
+      PolicyDocument:
+        Statement:
+          - Sid: 'AllowCloudFrontServicePrincipal'
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: 's3:GetObject'
+            Resource: !Sub '${!ImportValue}/*'
+            Condition:
+              StringEquals:
+                'AWS:SourceArn': !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+
+  # CloudFront Logs Bucket
+  CloudFrontLogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${Environment}-ai-messaging-cloudfront-logs-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: 'CloudFrontLogsLifecycle'
+            Status: Enabled
+            ExpirationInDays: 30
+            NoncurrentVersionExpirationInDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-cloudfront-logs'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # WAF Web ACL (Production only)
+  WebACL:
+    Type: AWS::WAFv2::WebACL
+    Condition: IsProduction
+    Properties:
+      Name: !Sub '${Environment}-ai-messaging-webacl'
+      Scope: CLOUDFRONT
+      DefaultAction:
+        Allow: {}
+      Rules:
+        - Name: 'AWSManagedRulesCommonRuleSet'
+          Priority: 1
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: 'CommonRuleSetMetric'
+        - Name: 'AWSManagedRulesKnownBadInputsRuleSet'
+          Priority: 2
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: 'KnownBadInputsRuleSetMetric'
+        - Name: 'RateLimitRule'
+          Priority: 3
+          Action:
+            Block: {}
+          Statement:
+            RateBasedStatement:
+              Limit: 2000
+              AggregateKeyType: IP
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: 'RateLimitRuleMetric'
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub '${Environment}-ai-messaging-webacl'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-webacl'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Alarms
+  CloudFrontErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ai-messaging-cloudfront-error-rate'
+      AlarmDescription: 'CloudFront error rate is too high'
+      MetricName: 4xxErrorRate
+      Namespace: AWS/CloudFront
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DistributionId
+          Value: !Ref CloudFrontDistribution
+      TreatMissingData: notBreaching
+
+  CloudFrontCacheHitRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ai-messaging-cloudfront-cache-hit-rate'
+      AlarmDescription: 'CloudFront cache hit rate is too low'
+      MetricName: CacheHitRate
+      Namespace: AWS/CloudFront
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: DistributionId
+          Value: !Ref CloudFrontDistribution
+      TreatMissingData: notBreaching
+
+  # CloudWatch Log Group for CloudFront
+  CloudFrontLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/cloudfront/${Environment}-ai-messaging'
+      RetentionInDays: !If [IsProduction, 30, 7]
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-cloudfront-logs'
+
+Outputs:
+  CloudFrontDistributionId:
+    Description: 'CloudFront Distribution ID'
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-cloudfront-distribution-id'
+
+  CloudFrontDomainName:
+    Description: 'CloudFront Domain Name'
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-cloudfront-domain-name'
+
+  CloudFrontURL:
+    Description: 'CloudFront URL'
+    Value: !Sub 'https://${CloudFrontDistribution.DomainName}'
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-cloudfront-url'
+
+  CloudFrontDistributionArn:
+    Description: 'CloudFront Distribution ARN'
+    Value: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-cloudfront-distribution-arn'
+
+  CloudFrontOriginAccessIdentityId:
+    Description: 'CloudFront Origin Access Identity ID'
+    Value: !Ref CloudFrontOriginAccessIdentity
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-cloudfront-oai-id'
+
+  CloudFrontLogsBucketName:
+    Description: 'CloudFront Logs Bucket Name'
+    Value: !Ref CloudFrontLogsBucket
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-cloudfront-logs-bucket'
+
+  WebACLArn:
+    Condition: IsProduction
+    Description: 'WAF Web ACL ARN'
+    Value: !GetAtt WebACL.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-webacl-arn'
+

@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Step 2: Application Load Balancer for AI Messaging Tool'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'production'
+    AllowedValues: ['development', 'staging', 'production']
+    Description: 'Environment name'
+  
+  VPCStackName:
+    Type: String
+    Default: 'ai-messaging-vpc'
+    Description: 'Name of the VPC stack'
+
+Resources:
+  # Security Group for Load Balancer
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${Environment}-ai-messaging-alb-sg'
+      GroupDescription: 'Security group for Application Load Balancer'
+      VpcId: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-vpc-id'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: 'HTTP access from anywhere'
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: 'HTTPS access from anywhere'
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+          Description: 'Frontend port access'
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          CidrIp: 0.0.0.0/0
+          Description: 'Backend port access'
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: 'All outbound traffic'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-alb-sg'
+
+  # Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${Environment}-ai-messaging-alb'
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !ImportValue
+          Fn::Sub: '${Environment}-ai-messaging-public-subnet-1-id'
+        - !ImportValue
+          Fn::Sub: '${Environment}-ai-messaging-public-subnet-2-id'
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-alb'
+
+Outputs:
+  LoadBalancerArn:
+    Description: 'Application Load Balancer ARN'
+    Value: !Ref ApplicationLoadBalancer
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-alb-arn'
+  
+  LoadBalancerDNS:
+    Description: 'Application Load Balancer DNS Name'
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-alb-dns'
+  
+  LoadBalancerSecurityGroupId:
+    Description: 'Load Balancer Security Group ID'
+    Value: !Ref LoadBalancerSecurityGroup
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-alb-sg-id'

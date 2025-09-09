@@ -1,0 +1,71 @@
+{
+  "project": "AI Messaging Tool",
+  "description": "Full-stack AI messaging application with automated uploads",
+  "codebases": {
+    "backend": {
+      "name": "Python Backend",
+      "path": "/Users/apple/Downloads/ai-messaging-python-backend/",
+      "technology": ["Python", "FastAPI", "Celery", "PostgreSQL", "Redis"],
+      "purpose": "API server, background tasks, database management",
+      "port": 8000,
+      "server": "103.215.159.51:8000",
+      "upload_system": {
+        "scripts": ["upload-to-server.sh", "watch-and-upload.sh"],
+        "automatic": true,
+        "service_restart": true
+      },
+      "key_files": [
+        "main.py",
+        "celery_app.py",
+        "celery_tasks/",
+        "database/",
+        "ai/",
+        "scraping/"
+      ]
+    },
+    "frontend": {
+      "name": "Next.js Frontend",
+      "path": "/Users/apple/Downloads/aimsg_onserver/Automated-AI-Messaging-Tool-Frontend/",
+      "technology": ["Next.js", "React", "TypeScript", "Material-UI"],
+      "purpose": "Admin interface, user management, file uploads",
+      "port": 3001,
+      "server": "103.215.159.51:3001",
+      "upload_system": {
+        "scripts": [],
+        "automatic": false,
+        "manual_deployment": true
+      },
+      "key_files": [
+        "src/app/",
+        "src/components/",
+        "src/api/",
+        "package.json",
+        "next.config.js"
+      ]
+    }
+  },
+  "development_workflow": {
+    "backend_development": {
+      "start_watcher": "./watch-and-upload.sh",
+      "manual_upload": "./upload-to-server.sh",
+      "health_check": "curl http://103.215.159.51:8000/health"
+    },
+    "frontend_development": {
+      "local_dev": "npm run dev",
+      "build": "npm run build",
+      "deploy": "Manual deployment required"
+    }
+  },
+  "integration_points": {
+    "api_endpoints": "Backend provides APIs for frontend",
+    "data_models": "Shared database schema",
+    "configuration": "Environment variables and settings",
+    "file_uploads": "Frontend uploads to backend processing"
+  },
+  "considerations": [
+    "Backend API changes require frontend API call updates",
+    "Frontend UI changes may need backend endpoint support",
+    "Database changes affect both backend models and frontend interfaces",
+    "Configuration changes need to be applied to both environments"
+  ]
+} 

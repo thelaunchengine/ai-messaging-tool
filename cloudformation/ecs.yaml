@@ -1,0 +1,668 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ECS Fargate Cluster and Services for AI Messaging Tool'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'production'
+    AllowedValues: ['development', 'staging', 'production']
+    Description: 'Environment name'
+
+  VPCStackName:
+    Type: String
+    Default: 'ai-messaging-vpc'
+    Description: 'Name of the VPC stack'
+
+  DatabaseStackName:
+    Type: String
+    Default: 'ai-messaging-database'
+    Description: 'Name of the database stack'
+
+  CacheStackName:
+    Type: String
+    Default: 'ai-messaging-cache'
+    Description: 'Name of the cache stack'
+
+  StorageStackName:
+    Type: String
+    Default: 'ai-messaging-storage'
+    Description: 'Name of the storage stack'
+
+  ECRStackName:
+    Type: String
+    Default: 'ai-messaging-ecr'
+    Description: 'Name of the ECR stack'
+
+  BackendImageTag:
+    Type: String
+    Default: 'latest'
+    Description: 'Backend Docker image tag'
+
+  FrontendImageTag:
+    Type: String
+    Default: 'latest'
+    Description: 'Frontend Docker image tag'
+
+  WorkerImageTag:
+    Type: String
+    Default: 'latest'
+    Description: 'Worker Docker image tag'
+
+  BackendCpu:
+    Type: String
+    Default: '512'
+    AllowedValues: ['256', '512', '1024', '2048', '4096']
+    Description: 'Backend CPU units'
+
+  BackendMemory:
+    Type: String
+    Default: '1024'
+    AllowedValues: ['512', '1024', '2048', '4096', '8192']
+    Description: 'Backend memory in MB'
+
+  FrontendCpu:
+    Type: String
+    Default: '256'
+    AllowedValues: ['256', '512', '1024', '2048', '4096']
+    Description: 'Frontend CPU units'
+
+  FrontendMemory:
+    Type: String
+    Default: '512'
+    AllowedValues: ['512', '1024', '2048', '4096', '8192']
+    Description: 'Frontend memory in MB'
+
+  WorkerCpu:
+    Type: String
+    Default: '1024'
+    AllowedValues: ['256', '512', '1024', '2048', '4096']
+    Description: 'Worker CPU units'
+
+  WorkerMemory:
+    Type: String
+    Default: '2048'
+    AllowedValues: ['512', '1024', '2048', '4096', '8192']
+    Description: 'Worker memory in MB'
+
+  DesiredCount:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 10
+    Description: 'Desired number of tasks'
+
+  MaxCount:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    MaxValue: 50
+    Description: 'Maximum number of tasks'
+
+  MinCount:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 10
+    Description: 'Minimum number of tasks'
+
+  TargetCpuUtilization:
+    Type: Number
+    Default: 70
+    MinValue: 1
+    MaxValue: 100
+    Description: 'Target CPU utilization for auto scaling'
+
+  TargetMemoryUtilization:
+    Type: Number
+    Default: 80
+    MinValue: 1
+    MaxValue: 100
+    Description: 'Target memory utilization for auto scaling'
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+
+Resources:
+  # ECS Cluster
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${Environment}-ai-messaging-cluster'
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+        - CapacityProvider: FARGATE_SPOT
+          Weight: 4
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-cluster'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${Environment}-ai-messaging-alb'
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !ImportValue
+          Fn::Sub: '${Environment}-ai-messaging-public-subnet-1-id'
+        - !ImportValue
+          Fn::Sub: '${Environment}-ai-messaging-public-subnet-2-id'
+      SecurityGroups:
+        - !ImportValue
+          Fn::Sub: '${Environment}-ai-messaging-web-sg-id'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-alb'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Target Groups
+  BackendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${Environment}-backend-tg'
+      Port: 8000
+      Protocol: HTTP
+      VpcId: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-vpc-id'
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-backend-tg'
+
+  FrontendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${Environment}-frontend-tg'
+      Port: 3000
+      Protocol: HTTP
+      VpcId: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-vpc-id'
+      TargetType: ip
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-frontend-tg'
+
+  # Load Balancer Listeners
+  BackendListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref BackendTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  FrontendListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FrontendTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 3000
+      Protocol: HTTP
+
+  # ECS Task Definitions
+  BackendTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-ai-messaging-backend'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: !Ref BackendCpu
+      Memory: !Ref BackendMemory
+      ExecutionRoleArn: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-ecr-task-role-arn'
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: backend
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Environment}-ai-messaging-backend:${BackendImageTag}'
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+          Environment:
+            - Name: NODE_ENV
+              Value: !Ref Environment
+            - Name: PORT
+              Value: '8000'
+            - Name: DB_HOST
+              Value: !ImportValue
+                Fn::Sub: '${Environment}-ai-messaging-db-endpoint'
+            - Name: DB_PORT
+              Value: !ImportValue
+                Fn::Sub: '${Environment}-ai-messaging-db-port'
+            - Name: DB_NAME
+              Value: !ImportValue
+                Fn::Sub: '${Environment}-ai-messaging-db-name'
+            - Name: REDIS_HOST
+              Value: !ImportValue
+                Fn::Sub: '${Environment}-ai-messaging-cache-primary-endpoint'
+            - Name: REDIS_PORT
+              Value: !ImportValue
+                Fn::Sub: '${Environment}-ai-messaging-cache-port'
+            - Name: S3_BUCKET
+              Value: !ImportValue
+                Fn::Sub: '${Environment}-ai-messaging-uploads-bucket'
+            - Name: DATABASE_URL
+              Value: !Sub 
+                - 'postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}'
+                - DB_USER: !ImportValue
+                    Fn::Sub: '${Environment}-ai-messaging-db-username'
+                  DB_PASSWORD: !ImportValue
+                    Fn::Sub: '${Environment}-ai-messaging-db-password'
+                  DB_HOST: !ImportValue
+                    Fn::Sub: '${Environment}-ai-messaging-db-endpoint'
+                  DB_PORT: !ImportValue
+                    Fn::Sub: '${Environment}-ai-messaging-db-port'
+                  DB_NAME: !ImportValue
+                    Fn::Sub: '${Environment}-ai-messaging-db-name'
+            - Name: REDIS_URL
+              Value: !Sub 
+                - 'redis://${REDIS_HOST}:${REDIS_PORT}/0'
+                - REDIS_HOST: !ImportValue
+                    Fn::Sub: '${Environment}-ai-messaging-cache-primary-endpoint'
+                  REDIS_PORT: !ImportValue
+                    Fn::Sub: '${Environment}-ai-messaging-cache-port'
+            - Name: GEMINI_API_KEY
+              Value: 'AIzaSyAktRAFpxfniqX0ZCFswTNKQh59alVeSGY'
+            - Name: SENDER_NAME
+              Value: 'AI Messaging System'
+            - Name: SENDER_EMAIL
+              Value: 'admin@yourdomain.com'
+            - Name: SENDER_PHONE
+              Value: '+1-555-123-4567'
+            - Name: MESSAGE_SUBJECT
+              Value: 'Business Inquiry'
+            - Name: COMPANY_NAME
+              Value: 'Your Company'
+            - Name: HOST
+              Value: '0.0.0.0'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref BackendLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: backend
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:8000/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+
+  FrontendTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-ai-messaging-frontend'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: !Ref FrontendCpu
+      Memory: !Ref FrontendMemory
+      ExecutionRoleArn: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-ecr-task-role-arn'
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: frontend
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Environment}-ai-messaging-frontend:${FrontendImageTag}'
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+          Environment:
+            - Name: NODE_ENV
+              Value: !Ref Environment
+            - Name: PORT
+              Value: '3000'
+            - Name: NEXT_PUBLIC_BACKEND_URL
+              Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}:8000'
+            - Name: NEXT_PUBLIC_BASE_URL
+              Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}:3000'
+            - Name: NEXTAUTH_URL
+              Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}:3000'
+            - Name: NEXTAUTH_SECRET
+              Value: 'your-secret-key-change-this-in-production'
+            - Name: DATABASE_URL
+              Value: !Sub 
+                - 'postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}'
+                - DB_USER: !ImportValue
+                    Fn::Sub: '${Environment}-ai-messaging-db-username'
+                  DB_PASSWORD: !ImportValue
+                    Fn::Sub: '${Environment}-ai-messaging-db-password'
+                  DB_HOST: !ImportValue
+                    Fn::Sub: '${Environment}-ai-messaging-db-endpoint'
+                  DB_PORT: !ImportValue
+                    Fn::Sub: '${Environment}-ai-messaging-db-port'
+                  DB_NAME: !ImportValue
+                    Fn::Sub: '${Environment}-ai-messaging-db-name'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref FrontendLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: frontend
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:3000/ || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+
+  WorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-ai-messaging-worker'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: !Ref WorkerCpu
+      Memory: !Ref WorkerMemory
+      ExecutionRoleArn: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-ecr-task-role-arn'
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: worker
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Environment}-ai-messaging-worker:${WorkerImageTag}'
+          Environment:
+            - Name: NODE_ENV
+              Value: !Ref Environment
+            - Name: DB_HOST
+              Value: !ImportValue
+                Fn::Sub: '${Environment}-ai-messaging-db-endpoint'
+            - Name: DB_PORT
+              Value: !ImportValue
+                Fn::Sub: '${Environment}-ai-messaging-db-port'
+            - Name: DB_NAME
+              Value: !ImportValue
+                Fn::Sub: '${Environment}-ai-messaging-db-name'
+            - Name: REDIS_HOST
+              Value: !ImportValue
+                Fn::Sub: '${Environment}-ai-messaging-cache-primary-endpoint'
+            - Name: REDIS_PORT
+              Value: !ImportValue
+                Fn::Sub: '${Environment}-ai-messaging-cache-port'
+            - Name: S3_BUCKET
+              Value: !ImportValue
+                Fn::Sub: '${Environment}-ai-messaging-uploads-bucket'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref WorkerLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: worker
+
+  # ECS Services
+  BackendService:
+    Type: AWS::ECS::Service
+    DependsOn: BackendListener
+    Properties:
+      ServiceName: !Sub '${Environment}-ai-messaging-backend-service'
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref BackendTaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups:
+            - !ImportValue
+              Fn::Sub: '${Environment}-ai-messaging-app-sg-id'
+          Subnets:
+            - !ImportValue
+              Fn::Sub: '${Environment}-ai-messaging-private-subnet-1-id'
+            - !ImportValue
+              Fn::Sub: '${Environment}-ai-messaging-private-subnet-2-id'
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - ContainerName: backend
+          ContainerPort: 8000
+          TargetGroupArn: !Ref BackendTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-backend-service'
+
+  FrontendService:
+    Type: AWS::ECS::Service
+    DependsOn: FrontendListener
+    Properties:
+      ServiceName: !Sub '${Environment}-ai-messaging-frontend-service'
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref FrontendTaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups:
+            - !ImportValue
+              Fn::Sub: '${Environment}-ai-messaging-web-sg-id'
+          Subnets:
+            - !ImportValue
+              Fn::Sub: '${Environment}-ai-messaging-public-subnet-1-id'
+            - !ImportValue
+              Fn::Sub: '${Environment}-ai-messaging-public-subnet-2-id'
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - ContainerName: frontend
+          ContainerPort: 3000
+          TargetGroupArn: !Ref FrontendTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-frontend-service'
+
+  WorkerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${Environment}-ai-messaging-worker-service'
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref WorkerTaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups:
+            - !ImportValue
+              Fn::Sub: '${Environment}-ai-messaging-app-sg-id'
+          Subnets:
+            - !ImportValue
+              Fn::Sub: '${Environment}-ai-messaging-private-subnet-1-id'
+            - !ImportValue
+              Fn::Sub: '${Environment}-ai-messaging-private-subnet-2-id'
+          AssignPublicIp: DISABLED
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-worker-service'
+
+  # IAM Role for ECS Tasks
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !ImportValue
+                    Fn::Sub: '${Environment}-ai-messaging-uploads-bucket-arn'
+                  - !Sub 
+                    - '${BucketArn}/*'
+                    - BucketArn: !ImportValue
+                        Fn::Sub: '${Environment}-ai-messaging-uploads-bucket-arn'
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-task-role'
+
+  # CloudWatch Log Groups
+  BackendLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/ecs/${Environment}-ai-messaging-backend'
+      RetentionInDays: !If [IsProduction, 30, 7]
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-backend-logs'
+
+  FrontendLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/ecs/${Environment}-ai-messaging-frontend'
+      RetentionInDays: !If [IsProduction, 30, 7]
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-frontend-logs'
+
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/ecs/${Environment}-ai-messaging-worker'
+      RetentionInDays: !If [IsProduction, 30, 7]
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-worker-logs'
+
+  # Auto Scaling
+  BackendScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn: BackendService
+    Properties:
+      MaxCapacity: !Ref MaxCount
+      MinCapacity: !Ref MinCount
+      ResourceId: !Sub 'service/${ECSCluster}/${Environment}-ai-messaging-backend-service'
+      RoleARN: !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService'
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  BackendScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub '${Environment}-ai-messaging-backend-scaling'
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref BackendScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: !Ref TargetCpuUtilization
+        ScaleOutCooldown: 300
+        ScaleInCooldown: 300
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+
+  WorkerScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn: WorkerService
+    Properties:
+      MaxCapacity: !Ref MaxCount
+      MinCapacity: !Ref MinCount
+      ResourceId: !Sub 'service/${ECSCluster}/${Environment}-ai-messaging-worker-service'
+      RoleARN: !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService'
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  WorkerScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub '${Environment}-ai-messaging-worker-scaling'
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref WorkerScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: !Ref TargetCpuUtilization
+        ScaleOutCooldown: 300
+        ScaleInCooldown: 300
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+
+Outputs:
+  ECSClusterName:
+    Description: 'ECS Cluster Name'
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-ecs-cluster-name'
+
+  ECSClusterArn:
+    Description: 'ECS Cluster ARN'
+    Value: !GetAtt ECSCluster.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-ecs-cluster-arn'
+
+  ApplicationLoadBalancerDNS:
+    Description: 'Application Load Balancer DNS'
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-alb-dns'
+
+  ApplicationLoadBalancerArn:
+    Description: 'Application Load Balancer ARN'
+    Value: !GetAtt ApplicationLoadBalancer.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-alb-arn'
+
+  BackendServiceName:
+    Description: 'Backend Service Name'
+    Value: !Ref BackendService
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-backend-service-name'
+
+  FrontendServiceName:
+    Description: 'Frontend Service Name'
+    Value: !Ref FrontendService
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-frontend-service-name'
+
+  WorkerServiceName:
+    Description: 'Worker Service Name'
+    Value: !Ref WorkerService
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-worker-service-name'
+
+  TaskRoleArn:
+    Description: 'Task Role ARN'
+    Value: !GetAtt TaskRole.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-task-role-arn'
+

@@ -1,0 +1,1 @@
+@app.post("/api/workflow/trigger-ai-generation", response_model=TaskResponse)

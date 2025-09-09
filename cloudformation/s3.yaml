@@ -1,0 +1,396 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'S3 Buckets for AI Messaging Tool Storage'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'production'
+    AllowedValues: ['development', 'staging', 'production']
+    Description: 'Environment name'
+
+  BucketNamePrefix:
+    Type: String
+    Default: 'ai-messaging-tool'
+    Description: 'Prefix for S3 bucket names'
+
+  EnableVersioning:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 'Enable versioning on buckets'
+
+  EnableLifecyclePolicy:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 'Enable lifecycle policies'
+
+  TransitionToIA:
+    Type: Number
+    Default: 30
+    MinValue: 1
+    MaxValue: 365
+    Description: 'Days to transition to IA storage'
+
+  TransitionToGlacier:
+    Type: Number
+    Default: 90
+    MinValue: 1
+    MaxValue: 365
+    Description: 'Days to transition to Glacier storage'
+
+  ExpirationDays:
+    Type: Number
+    Default: 2555
+    MinValue: 1
+    MaxValue: 3650
+    Description: 'Days before objects expire'
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+  IsVersioningEnabled: !Equals [!Ref EnableVersioning, 'true']
+  IsLifecycleEnabled: !Equals [!Ref EnableLifecyclePolicy, 'true']
+
+Resources:
+  # File Uploads Bucket
+  FileUploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketNamePrefix}-${Environment}-uploads'
+      VersioningConfiguration:
+        Status: !If [IsVersioningEnabled, Enabled, Suspended]
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      # NotificationConfiguration:
+      #   CloudWatchConfigurations:
+      #     - Event: s3:ObjectCreated:*
+      #       CloudWatchConfiguration:
+      #         LogGroupName: !Ref FileUploadsLogGroup
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST, DELETE, HEAD]
+            AllowedOrigins: ['*']
+            ExposedHeaders: ['ETag']
+            MaxAge: 3000
+      LifecycleConfiguration: !If
+        - IsLifecycleEnabled
+        - Rules:
+            - Id: 'FileUploadsLifecycle'
+              Status: Enabled
+              Transitions:
+                - StorageClass: STANDARD_IA
+                  TransitionInDays: !Ref TransitionToIA
+                - StorageClass: GLACIER
+                  TransitionInDays: !Ref TransitionToGlacier
+              ExpirationInDays: !Ref ExpirationDays
+              NoncurrentVersionTransitions:
+                - StorageClass: STANDARD_IA
+                  TransitionInDays: 30
+                - StorageClass: GLACIER
+                  TransitionInDays: 60
+              NoncurrentVersionExpirationInDays: 120
+            - Id: 'DeleteIncompleteMultipartUploads'
+              Status: Enabled
+              AbortIncompleteMultipartUpload:
+                DaysAfterInitiation: 7
+        - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-uploads'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: 'File Uploads'
+
+  # Frontend Assets Bucket
+  FrontendAssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketNamePrefix}-${Environment}-frontend'
+      VersioningConfiguration:
+        Status: !If [IsVersioningEnabled, Enabled, Suspended]
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, HEAD]
+            AllowedOrigins: ['*']
+            ExposedHeaders: ['ETag']
+            MaxAge: 3000
+      LifecycleConfiguration: !If
+        - IsLifecycleEnabled
+        - Rules:
+            - Id: 'FrontendAssetsLifecycle'
+              Status: Enabled
+              Transitions:
+                - StorageClass: STANDARD_IA
+                  TransitionInDays: 30
+              NoncurrentVersionTransitions:
+                - StorageClass: STANDARD_IA
+                  TransitionInDays: 30
+              NoncurrentVersionExpirationInDays: 60
+        - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-frontend'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: 'Frontend Assets'
+
+  # Backup Bucket
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketNamePrefix}-${Environment}-backups'
+      VersioningConfiguration:
+        Status: !If [IsVersioningEnabled, Enabled, Suspended]
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration: !If
+        - IsLifecycleEnabled
+        - Rules:
+            - Id: 'BackupLifecycle'
+              Status: Enabled
+              Transitions:
+                - StorageClass: STANDARD_IA
+                  TransitionInDays: 30
+                - StorageClass: GLACIER
+                  TransitionInDays: 90
+                - StorageClass: DEEP_ARCHIVE
+                  TransitionInDays: 365
+              ExpirationInDays: 2555
+              NoncurrentVersionTransitions:
+                - StorageClass: STANDARD_IA
+                  TransitionInDays: 30
+                - StorageClass: GLACIER
+                  TransitionInDays: 60
+                - StorageClass: DEEP_ARCHIVE
+                  TransitionInDays: 180
+              NoncurrentVersionExpirationInDays: 365
+        - !Ref AWS::NoValue
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-backups'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: 'Backups'
+
+  # Bucket Policies
+  FileUploadsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FileUploadsBucket
+      PolicyDocument:
+        Statement:
+          - Sid: 'DenyInsecureConnections'
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Sub '${FileUploadsBucket.Arn}/*'
+              - !GetAtt FileUploadsBucket.Arn
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+  FrontendAssetsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendAssetsBucket
+      PolicyDocument:
+        Statement:
+          - Sid: 'PublicReadGetObject'
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Sub '${FrontendAssetsBucket.Arn}/*'
+          - Sid: 'DenyInsecureConnections'
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Sub '${FrontendAssetsBucket.Arn}/*'
+              - !GetAtt FrontendAssetsBucket.Arn
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+  BackupBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BackupBucket
+      PolicyDocument:
+        Statement:
+          - Sid: 'DenyInsecureConnections'
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Sub '${BackupBucket.Arn}/*'
+              - !GetAtt BackupBucket.Arn
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+  # CloudWatch Log Groups
+  FileUploadsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/s3/${Environment}-ai-messaging-uploads'
+      RetentionInDays: !If [IsProduction, 30, 7]
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-uploads-logs'
+
+  # Lambda Function for File Processing
+  FileProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-ai-messaging-file-processor'
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt FileProcessorRole.Arn
+      Timeout: 300
+      MemorySize: 512
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref FileUploadsBucket
+          ENVIRONMENT: !Ref Environment
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          
+          def lambda_handler(event, context):
+              print(f"File upload event: {json.dumps(event)}")
+              
+              # Process file upload event
+              for record in event['Records']:
+                  bucket = record['s3']['bucket']['name']
+                  key = record['s3']['object']['key']
+                  
+                  print(f"Processing file: {key} from bucket: {bucket}")
+                  
+                  # Add your file processing logic here
+                  # This could trigger other services or workflows
+                  
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps('File processing completed')
+              }
+
+  # IAM Role for File Processor Lambda
+  FileProcessorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub '${FileUploadsBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt FileUploadsBucket.Arn
+
+  # Lambda Permission for S3
+  FileProcessorPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref FileProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt FileUploadsBucket.Arn
+
+Outputs:
+  FileUploadsBucketName:
+    Description: 'File Uploads Bucket Name'
+    Value: !Ref FileUploadsBucket
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-uploads-bucket'
+
+  FileUploadsBucketArn:
+    Description: 'File Uploads Bucket ARN'
+    Value: !GetAtt FileUploadsBucket.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-uploads-bucket-arn'
+
+  FrontendAssetsBucketName:
+    Description: 'Frontend Assets Bucket Name'
+    Value: !Ref FrontendAssetsBucket
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-frontend-bucket'
+
+  FrontendAssetsBucketArn:
+    Description: 'Frontend Assets Bucket ARN'
+    Value: !GetAtt FrontendAssetsBucket.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-frontend-bucket-arn'
+
+  FrontendWebsiteURL:
+    Description: 'Frontend Website URL'
+    Value: !GetAtt FrontendAssetsBucket.WebsiteURL
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-frontend-website-url'
+
+  BackupBucketName:
+    Description: 'Backup Bucket Name'
+    Value: !Ref BackupBucket
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-backups-bucket'
+
+  BackupBucketArn:
+    Description: 'Backup Bucket ARN'
+    Value: !GetAtt BackupBucket.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-backups-bucket-arn'
+
+  FileProcessorFunctionArn:
+    Description: 'File Processor Lambda Function ARN'
+    Value: !GetAtt FileProcessorFunction.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-file-processor-arn'

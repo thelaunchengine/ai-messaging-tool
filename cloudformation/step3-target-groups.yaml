@@ -1,0 +1,123 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Step 3: Target Groups for Frontend and Backend'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'production'
+    AllowedValues: ['development', 'staging', 'production']
+    Description: 'Environment name'
+  
+  VPCStackName:
+    Type: String
+    Default: 'ai-messaging-vpc'
+    Description: 'Name of the VPC stack'
+  
+  LoadBalancerStackName:
+    Type: String
+    Default: 'ai-messaging-step2-alb'
+    Description: 'Name of the Load Balancer stack'
+
+Resources:
+  # Backend Target Group
+  BackendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${Environment}-backend-tg'
+      Port: 8000
+      Protocol: HTTP
+      VpcId: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-vpc-id'
+      TargetType: ip
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: traffic-port
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-backend-tg'
+
+  # Frontend Target Group
+  FrontendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${Environment}-frontend-tg'
+      Port: 3000
+      Protocol: HTTP
+      VpcId: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-vpc-id'
+      TargetType: ip
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: traffic-port
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-frontend-tg'
+
+  # Backend Listener
+  BackendListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref BackendTargetGroup
+      LoadBalancerArn: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-alb-arn'
+      Port: 8000
+      Protocol: HTTP
+
+  # Frontend Listener
+  FrontendListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FrontendTargetGroup
+      LoadBalancerArn: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-alb-arn'
+      Port: 3000
+      Protocol: HTTP
+
+  # Default HTTP Listener (port 80) - redirect to frontend
+  DefaultListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FrontendTargetGroup
+      LoadBalancerArn: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-alb-arn'
+      Port: 80
+      Protocol: HTTP
+
+Outputs:
+  BackendTargetGroupArn:
+    Description: 'Backend Target Group ARN'
+    Value: !Ref BackendTargetGroup
+    Export:
+      Name: !Sub '${Environment}-backend-tg-arn'
+  
+  FrontendTargetGroupArn:
+    Description: 'Frontend Target Group ARN'
+    Value: !Ref FrontendTargetGroup
+    Export:
+      Name: !Sub '${Environment}-frontend-tg-arn'
+  
+  BackendListenerArn:
+    Description: 'Backend Listener ARN'
+    Value: !Ref BackendListener
+    Export:
+      Name: !Sub '${Environment}-backend-listener-arn'
+  
+  FrontendListenerArn:
+    Description: 'Frontend Listener ARN'
+    Value: !Ref FrontendListener
+    Export:
+      Name: !Sub '${Environment}-frontend-listener-arn'

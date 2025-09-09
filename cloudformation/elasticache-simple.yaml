@@ -1,0 +1,213 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ElastiCache Redis Cluster for AI Messaging Tool'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'production'
+    AllowedValues: ['development', 'staging', 'production']
+    Description: 'Environment name'
+
+  VPCStackName:
+    Type: String
+    Default: 'ai-messaging-vpc'
+    Description: 'Name of the VPC stack'
+
+  NodeType:
+    Type: String
+    Default: 'cache.t3.micro'
+    AllowedValues: ['cache.t3.micro', 'cache.t3.small', 'cache.t3.medium', 'cache.t3.large']
+    Description: 'Cache node type'
+
+  NumCacheNodes:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 6
+    Description: 'Number of cache nodes'
+
+  EngineVersion:
+    Type: String
+    Default: '7.0'
+    AllowedValues: ['6.0', '6.2', '6.x', '7.0']
+    Description: 'Redis engine version'
+
+  Port:
+    Type: Number
+    Default: 6379
+    MinValue: 1024
+    MaxValue: 65535
+    Description: 'Redis port'
+
+  ParameterGroupFamily:
+    Type: String
+    Default: 'redis7'
+    AllowedValues: ['redis6', 'redis7']
+    Description: 'Parameter group family'
+
+  SnapshotRetentionLimit:
+    Type: Number
+    Default: 5
+    MinValue: 0
+    MaxValue: 35
+    Description: 'Snapshot retention limit in days'
+
+  SnapshotWindow:
+    Type: String
+    Default: '03:00-05:00'
+    Description: 'Snapshot window (UTC)'
+
+  MaintenanceWindow:
+    Type: String
+    Default: 'sun:05:00-sun:07:00'
+    Description: 'Maintenance window (UTC)'
+
+  AutomaticFailoverEnabled:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: 'Enable automatic failover'
+
+  MultiAZEnabled:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: 'Enable Multi-AZ'
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+  IsMultiAZ: !Equals [!Ref MultiAZEnabled, 'true']
+  IsAutoFailover: !Equals [!Ref AutomaticFailoverEnabled, 'true']
+
+Resources:
+  # Subnet Group
+  CacheSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: 'Subnet group for AI Messaging Tool Redis cluster'
+      SubnetIds:
+        - !ImportValue
+          Fn::Sub: '${Environment}-ai-messaging-private-subnet-1-id'
+        - !ImportValue
+          Fn::Sub: '${Environment}-ai-messaging-private-subnet-2-id'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-cache-subnet-group'
+
+  # Parameter Group
+  CacheParameterGroup:
+    Type: AWS::ElastiCache::ParameterGroup
+    Properties:
+      CacheParameterGroupFamily: !Ref ParameterGroupFamily
+      Description: 'Parameter group for AI Messaging Tool Redis'
+      Properties:
+        maxmemory-policy: allkeys-lru
+        timeout: 300
+        tcp-keepalive: 60
+        maxmemory-samples: 5
+        slowlog-log-slower-than: 10000
+        slowlog-max-len: 128
+        notify-keyspace-events: Ex
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-cache-params'
+
+  # Security Group
+  CacheSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      # GroupName: !Sub '${Environment}-ai-messaging-cache-sg'
+      GroupDescription: 'Security group for Redis cache'
+      VpcId: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-vpc-id'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref Port
+          ToPort: !Ref Port
+          SourceSecurityGroupId: !ImportValue
+            Fn::Sub: '${Environment}-ai-messaging-app-sg-id'
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-cache-sg'
+
+  # Replication Group (Cluster) - Minimal Redis 7 configuration
+  CacheReplicationGroup:
+    Type: AWS::ElastiCache::ReplicationGroup
+    Properties:
+      ReplicationGroupId: !Sub '${Environment}-ai-messaging-redis'
+      ReplicationGroupDescription: !Sub '${Environment} AI Messaging Tool Redis cluster'
+      CacheNodeType: !Ref NodeType
+      Port: !Ref Port
+      CacheSubnetGroupName: !Ref CacheSubnetGroup
+      SecurityGroupIds:
+        - !Ref CacheSecurityGroup
+      Engine: redis
+      EngineVersion: !Ref EngineVersion
+      NumCacheClusters: !If [IsMultiAZ, 2, !Ref NumCacheNodes]
+      AutomaticFailoverEnabled: !If [IsAutoFailover, true, false]
+      MultiAZEnabled: !If [IsMultiAZ, true, false]
+      SnapshotRetentionLimit: !Ref SnapshotRetentionLimit
+      SnapshotWindow: !Ref SnapshotWindow
+      PreferredMaintenanceWindow: !Ref MaintenanceWindow
+      # LogDeliveryConfigurations:  # Too complex for Redis 7
+      #   - DestinationType: cloudwatch-logs
+      #     LogFormat: text
+      #     LogType: slow-log
+      #   - DestinationType: cloudwatch-logs
+      #     LogFormat: json
+      #     LogType: engine-log
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-redis'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Log Group for Redis
+  CacheLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/elasticache/redis/${Environment}-ai-messaging-redis'
+      RetentionInDays: !If [IsProduction, 30, 7]
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-cache-logs'
+
+Outputs:
+  CacheReplicationGroupId:
+    Description: 'Cache Replication Group ID'
+    Value: !Ref CacheReplicationGroup
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-cache-replication-group-id'
+
+  CachePrimaryEndpoint:
+    Description: 'Cache Primary Endpoint'
+    Value: !Sub '${CacheReplicationGroup}.cache.amazonaws.com'
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-cache-primary-endpoint'
+
+  CachePort:
+    Description: 'Cache Port'
+    Value: !Ref Port
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-cache-port'
+
+  CacheReaderEndpoint:
+    Description: 'Cache Reader Endpoint'
+    Value: !Sub '${CacheReplicationGroup}.cache.amazonaws.com'
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-cache-reader-endpoint'
+
+  # CacheSecurityGroupId:
+  #   Description: 'Cache Security Group ID'
+  #   Value: !Ref CacheSecurityGroup
+  #   Export:
+  #     Name: !Sub '${Environment}-ai-messaging-cache-sg-id'
+
+  CacheSubnetGroupName:
+    Description: 'Cache Subnet Group Name'
+    Value: !Ref CacheSubnetGroup
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-cache-subnet-group-name'

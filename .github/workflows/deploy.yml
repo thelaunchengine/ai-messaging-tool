@@ -1,0 +1,79 @@
+name: Deploy AI Messaging Tool to AWS
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: 957440525184.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REPOSITORY_BACKEND: production-ai-messaging-backend
+  ECR_REPOSITORY_FRONTEND: production-ai-messaging-frontend
+  ECR_REPOSITORY_WORKER: production-ai-messaging-worker
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push backend image
+      working-directory: ./Automated-AI-Messaging-Tool-Backend
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest .
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$GITHUB_SHA
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$GITHUB_SHA
+
+    - name: Build, tag, and push frontend image
+      working-directory: ./Automated-AI-Messaging-Tool-Frontend
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest .
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$GITHUB_SHA
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$GITHUB_SHA
+
+    - name: Update ECS services
+      run: |
+        # Update backend service
+        aws ecs update-service \
+          --cluster production-ai-messaging-cluster \
+          --service production-ai-messaging-backend-service \
+          --force-new-deployment
+        
+        # Update frontend service (when it exists)
+        aws ecs update-service \
+          --cluster production-ai-messaging-cluster \
+          --service production-ai-messaging-frontend-service \
+          --force-new-deployment || echo "Frontend service not found yet"
+
+    - name: Wait for deployment to complete
+      run: |
+        aws ecs wait services-stable \
+          --cluster production-ai-messaging-cluster \
+          --services production-ai-messaging-backend-service
+
+    - name: Get load balancer URL
+      run: |
+        ALB_DNS=$(aws elbv2 describe-load-balancers \
+          --query 'LoadBalancers[?contains(LoadBalancerName, `ai-messaging`)].DNSName' \
+          --output text)
+        echo "🚀 Application deployed successfully!"
+        echo "Frontend: http://$ALB_DNS:3000"
+        echo "Backend: http://$ALB_DNS:8000"

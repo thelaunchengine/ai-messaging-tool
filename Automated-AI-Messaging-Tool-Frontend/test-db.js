@@ -1,0 +1,1 @@
+const { PrismaClient } = require("@prisma/client"); const prisma = new PrismaClient(); prisma.users.findFirst().then(r => console.log("DB OK:", r ? "User found" : "No users")).catch(e => console.log("DB Error:", e.message)).finally(() => prisma.$disconnect());

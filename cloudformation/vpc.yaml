@@ -1,0 +1,418 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'VPC and Networking Infrastructure for AI Messaging Tool'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'production'
+    AllowedValues: ['development', 'staging', 'production']
+    Description: 'Environment name'
+
+  AvailabilityZones:
+    Type: CommaDelimitedList
+    Default: 'us-east-1a,us-east-1b'
+    Description: 'Availability Zones for the VPC'
+
+Resources:
+  # VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-vpc'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-igw'
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  # Public Subnets
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-public-subnet-1'
+        - Key: Environment
+          Value: !Ref Environment
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-public-subnet-2'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Private Subnets
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      CidrBlock: 10.0.10.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-private-subnet-1'
+        - Key: Environment
+          Value: !Ref Environment
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      CidrBlock: 10.0.20.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-private-subnet-2'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Database Subnets
+  DatabaseSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      CidrBlock: 10.0.30.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-database-subnet-1'
+        - Key: Environment
+          Value: !Ref Environment
+
+  DatabaseSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      CidrBlock: 10.0.40.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-database-subnet-2'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # NAT Gateway
+  NatGatewayEIP1:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGatewayEIP2:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP1.AllocationId
+      SubnetId: !Ref PublicSubnet1
+
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP2.AllocationId
+      SubnetId: !Ref PublicSubnet2
+
+  # Route Tables
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-public-rt'
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-private-rt-1'
+
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-private-rt-2'
+
+  DefaultPrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+
+  DatabaseRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-database-rt'
+
+  DatabaseSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref DatabaseRouteTable
+      SubnetId: !Ref DatabaseSubnet1
+
+  DatabaseSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref DatabaseRouteTable
+      SubnetId: !Ref DatabaseSubnet2
+
+  # Security Groups
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${Environment}-ai-messaging-web-sg'
+      GroupDescription: 'Security group for web servers'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3001
+          ToPort: 3001
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-web-sg'
+
+  ApplicationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${Environment}-ai-messaging-app-sg'
+      GroupDescription: 'Security group for application servers'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          SourceSecurityGroupId: !Ref WebSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-app-sg'
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${Environment}-ai-messaging-db-sg'
+      GroupDescription: 'Security group for database'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref ApplicationSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref ApplicationSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-db-sg'
+
+  CacheSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${Environment}-ai-messaging-cache-sg'
+      GroupDescription: 'Security group for cache'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref ApplicationSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 11211
+          ToPort: 11211
+          SourceSecurityGroupId: !Ref ApplicationSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-cache-sg'
+
+  # Database Subnet Group
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: 'Subnet group for AI Messaging Tool database'
+      SubnetIds:
+        - !Ref DatabaseSubnet1
+        - !Ref DatabaseSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-db-subnet-group'
+
+Outputs:
+  VPCId:
+    Description: 'VPC ID'
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-vpc-id'
+
+  PublicSubnet1Id:
+    Description: 'Public Subnet 1 ID'
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-public-subnet-1-id'
+
+  PublicSubnet2Id:
+    Description: 'Public Subnet 2 ID'
+    Value: !Ref PublicSubnet2
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-public-subnet-2-id'
+
+  PrivateSubnet1Id:
+    Description: 'Private Subnet 1 ID'
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-private-subnet-1-id'
+
+  PrivateSubnet2Id:
+    Description: 'Private Subnet 2 ID'
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-private-subnet-2-id'
+
+  DatabaseSubnet1Id:
+    Description: 'Database Subnet 1 ID'
+    Value: !Ref DatabaseSubnet1
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-database-subnet-1-id'
+
+  DatabaseSubnet2Id:
+    Description: 'Database Subnet 2 ID'
+    Value: !Ref DatabaseSubnet2
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-database-subnet-2-id'
+
+  WebSecurityGroupId:
+    Description: 'Web Security Group ID'
+    Value: !Ref WebSecurityGroup
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-web-sg-id'
+
+  ApplicationSecurityGroupId:
+    Description: 'Application Security Group ID'
+    Value: !Ref ApplicationSecurityGroup
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-app-sg-id'
+
+  DatabaseSecurityGroupId:
+    Description: 'Database Security Group ID'
+    Value: !Ref DatabaseSecurityGroup
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-db-sg-id'
+
+  CacheSecurityGroupId:
+    Description: 'Cache Security Group ID'
+    Value: !Ref CacheSecurityGroup
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-cache-sg-id'
+
+  DatabaseSubnetGroupName:
+    Description: 'Database Subnet Group Name'
+    Value: !Ref DatabaseSubnetGroup
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-db-subnet-group-name'
+

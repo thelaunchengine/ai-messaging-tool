@@ -1,0 +1,72 @@
+{
+  "family": "production-ai-messaging-frontend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::957440525184:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::957440525184:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "frontend",
+      "image": "957440525184.dkr.ecr.us-east-1.amazonaws.com/ai-messaging-frontend:latest",
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "development"
+        },
+        {
+          "name": "PORT",
+          "value": "3000"
+        },
+        {
+          "name": "NEXT_PUBLIC_BACKEND_URL",
+          "value": "http://production-ai-messaging-alb-746376383.us-east-1.elb.amazonaws.com:8000"
+        },
+        {
+          "name": "NEXT_PUBLIC_BASE_URL",
+          "value": "http://production-ai-messaging-alb-746376383.us-east-1.elb.amazonaws.com:3000"
+        },
+        {
+          "name": "NEXTAUTH_URL",
+          "value": "http://production-ai-messaging-alb-746376383.us-east-1.elb.amazonaws.com:3000"
+        },
+        {
+          "name": "NEXTAUTH_SECRET",
+          "value": "your-nextauth-secret-key-here"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:957440525184:secret:production-ai-messaging-db-password"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/production-ai-messaging-frontend",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -f http://localhost:3000/ || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}

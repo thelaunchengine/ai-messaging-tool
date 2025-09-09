@@ -1,0 +1,4 @@
+websiteUrl,contactFormUrl
+https://example.com,https://example.com/contact
+https://httpbin.org,https://httpbin.org/forms/post
+https://jsonplaceholder.typicode.com,https://jsonplaceholder.typicode.com/contact

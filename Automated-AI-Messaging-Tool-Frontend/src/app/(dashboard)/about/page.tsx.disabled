@@ -1,0 +1,118 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Box, Grid, Stack, Typography, Paper, Divider, CircularProgress, Alert } from '@mui/material';
+import MainCard from '../../../components/MainCard';
+
+interface ContentData {
+  title: string;
+  content: string;
+  lastUpdated?: string;
+  status?: string;
+}
+
+export default function AboutPage() {
+  const [content, setContent] = useState<ContentData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchContent = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch('/api/content?type=about');
+
+        if (response.ok) {
+          const data = await response.json();
+          setContent(data.content);
+        } else {
+          // If no content found, use default content
+          setContent({
+            title: 'About AI Messaging Tool',
+            content: `Welcome to AI Messaging Tool, a powerful platform designed to revolutionize how businesses connect with potential customers through automated, intelligent messaging.
+
+Our Mission:
+We strive to make business communication more efficient and effective by leveraging artificial intelligence to create personalized, engaging messages that resonate with your target audience.
+
+What We Do:
+• Automated website analysis and contact form detection
+• AI-powered message generation tailored to each business
+• Intelligent form submission and follow-up management
+• Comprehensive analytics and performance tracking
+
+Our Technology:
+Built with cutting-edge AI models and modern web technologies, our platform ensures reliable, scalable, and secure operations for businesses of all sizes.
+
+Get Started:
+Join thousands of businesses that are already using AI Messaging Tool to expand their reach and grow their customer base.`,
+            lastUpdated: new Date().toLocaleDateString(),
+            status: 'published'
+          });
+        }
+      } catch (err) {
+        setError('Failed to load content. Please try again later.');
+        // Set default content on error
+        setContent({
+          title: 'About AI Messaging Tool',
+          content: `Welcome to AI Messaging Tool, a powerful platform designed to revolutionize how businesses connect with potential customers through automated, intelligent messaging.
+
+Our Mission:
+We strive to make business communication more efficient and effective by leveraging artificial intelligence to create personalized, engaging messages that resonate with your target audience.
+
+What We Do:
+• Automated website analysis and contact form detection
+• AI-powered message generation tailored to each business
+• Intelligent form submission and follow-up management
+• Comprehensive analytics and performance tracking
+
+Our Technology:
+Built with cutting-edge AI models and modern web technologies, our platform ensures reliable, scalable, and secure operations for businesses of all sizes.
+
+Get Started:
+Join thousands of businesses that are already using AI Messaging Tool to expand their reach and grow their customer base.`,
+          lastUpdated: new Date().toLocaleDateString(),
+          status: 'published'
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchContent();
+  }, []);
+
+  if (loading) {
+    return (
+      <Box sx={{ p: 3, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error && !content) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">{error}</Alert>
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ p: 3 }}>
+      <Grid container spacing={3}>
+        <Grid item xs={12}>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="h4" fontWeight={700} sx={{ color: '#23272E' }}>
+              About AI Messaging Tool
+            </Typography>
+          </Box>
+          <Paper variant="outlined" sx={{ p: 3 }}>
+            <Typography variant="body1" sx={{ whiteSpace: 'pre-line', lineHeight: 1.8 }}>
+              {content?.content || 'Content not available.'}
+            </Typography>
+          </Paper>
+        </Grid>
+      </Grid>
+    </Box>
+  );
+}

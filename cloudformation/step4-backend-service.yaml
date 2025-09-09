@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Step 4: Backend ECS Service for AI Messaging Tool'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'production'
+    AllowedValues: ['development', 'staging', 'production']
+    Description: 'Environment name'
+  
+  VPCStackName:
+    Type: String
+    Default: 'ai-messaging-vpc'
+    Description: 'Name of the VPC stack'
+  
+  DatabaseStackName:
+    Type: String
+    Default: 'ai-messaging-database'
+    Description: 'Name of the database stack'
+  
+  CacheStackName:
+    Type: String
+    Default: 'ai-messaging-cache'
+    Description: 'Name of the cache stack'
+  
+  StorageStackName:
+    Type: String
+    Default: 'ai-messaging-storage'
+    Description: 'Name of the storage stack'
+  
+  ECRStackName:
+    Type: String
+    Default: 'ai-messaging-ecr'
+    Description: 'Name of the ECR stack'
+
+Resources:
+  # ECS Task Definition for Backend
+  BackendTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-ai-messaging-backend'
+      TaskRoleArn: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-ecr-task-role-arn'
+      ExecutionRoleArn: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-ecr-task-role-arn'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: 512
+      Memory: 1024
+      ContainerDefinitions:
+        - Name: backend
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Environment}-ai-messaging-backend:v3'
+          Cpu: 0
+          PortMappings:
+            - ContainerPort: 8000
+              HostPort: 8000
+              Protocol: tcp
+          Essential: true
+          Environment:
+            - Name: S3_BUCKET
+              Value: !ImportValue
+                Fn::Sub: '${Environment}-ai-messaging-uploads-bucket'
+            - Name: REDIS_HOST
+              Value: !ImportValue
+                Fn::Sub: '${Environment}-ai-messaging-cache-primary-endpoint'
+            - Name: PORT
+              Value: '8000'
+            - Name: REDIS_PORT
+              Value: '6379'
+            - Name: DB_PORT
+              Value: '5432'
+            - Name: GEMINI_API_KEY
+              Value: 'AIzaSyAktRAFpxfniqX0ZCFswTNKQh59alVeSGY'
+            - Name: NODE_ENV
+              Value: 'production'
+            - Name: DB_NAME
+              Value: 'ai_messaging'
+            - Name: DB_HOST
+              Value: !ImportValue
+                Fn::Sub: '${Environment}-ai-messaging-db-endpoint'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref BackendLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: backend
+
+  # CloudWatch Log Group for Backend
+  BackendLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/ecs/${Environment}-ai-messaging-backend'
+      RetentionInDays: 7
+
+  # ECS Service for Backend
+  BackendService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${Environment}-ai-messaging-backend-service'
+      Cluster: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-cluster-arn'
+      TaskDefinition: !Ref BackendTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !ImportValue
+              Fn::Sub: '${Environment}-ai-messaging-private-subnet-1-id'
+            - !ImportValue
+              Fn::Sub: '${Environment}-ai-messaging-private-subnet-2-id'
+          SecurityGroups:
+            - !ImportValue
+              Fn::Sub: '${Environment}-ai-messaging-app-sg-id'
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - TargetGroupArn: !ImportValue
+            Fn::Sub: '${Environment}-backend-tg-arn'
+          ContainerName: backend
+          ContainerPort: 8000
+      HealthCheckGracePeriodSeconds: 60
+
+Outputs:
+  BackendServiceName:
+    Description: 'Backend ECS Service Name'
+    Value: !Ref BackendService
+    Export:
+      Name: !Sub '${Environment}-backend-service-name'
+  
+  BackendTaskDefinitionArn:
+    Description: 'Backend Task Definition ARN'
+    Value: !Ref BackendTaskDefinition
+    Export:
+      Name: !Sub '${Environment}-backend-task-definition-arn'

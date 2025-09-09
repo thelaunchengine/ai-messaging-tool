@@ -1,0 +1,438 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'API Gateway and Lambda Functions for AI Messaging Tool'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'production'
+    AllowedValues: ['development', 'staging', 'production']
+    Description: 'Environment name'
+
+  ECSStackName:
+    Type: String
+    Default: 'ai-messaging-ecs'
+    Description: 'Name of the ECS stack'
+
+  StorageStackName:
+    Type: String
+    Default: 'ai-messaging-storage'
+    Description: 'Name of the storage stack'
+
+  APIGatewayThrottleRateLimit:
+    Type: Number
+    Default: 1000
+    MinValue: 100
+    MaxValue: 10000
+    Description: 'API Gateway throttle rate limit'
+
+  APIGatewayBurstLimit:
+    Type: Number
+    Default: 2000
+    MinValue: 200
+    MaxValue: 20000
+    Description: 'API Gateway burst limit'
+
+  LambdaTimeout:
+    Type: Number
+    Default: 30
+    MinValue: 3
+    MaxValue: 900
+    Description: 'Lambda function timeout in seconds'
+
+  LambdaMemorySize:
+    Type: Number
+    Default: 512
+    MinValue: 128
+    MaxValue: 10240
+    Description: 'Lambda function memory size in MB'
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+
+Resources:
+  # API Gateway
+  APIGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${Environment}-ai-messaging-api'
+      Description: 'API Gateway for AI Messaging Tool'
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Policy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: execute-api:Invoke
+            Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-api'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # API Gateway Deployment
+  APIGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - FileUploadMethod
+      - FileUploadIntegration
+      - HealthCheckMethod
+      - HealthCheckIntegration
+    Properties:
+      RestApiId: !Ref APIGateway
+      StageName: !Ref Environment
+
+  # API Gateway Stage
+  APIGatewayStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      DeploymentId: !Ref APIGatewayDeployment
+      RestApiId: !Ref APIGateway
+      StageName: !Ref Environment
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          ThrottlingRateLimit: !Ref APIGatewayThrottleRateLimit
+          ThrottlingBurstLimit: !Ref APIGatewayBurstLimit
+          LoggingLevel: INFO
+          DataTraceEnabled: true
+          MetricsEnabled: true
+      AccessLogSetting:
+        DestinationArn: !GetAtt APIGatewayLogGroup.Arn
+        Format: |
+          {
+            "requestId": "$context.requestId",
+            "ip": "$context.identity.sourceIp",
+            "caller": "$context.identity.caller",
+            "user": "$context.identity.user",
+            "requestTime": "$context.requestTime",
+            "httpMethod": "$context.httpMethod",
+            "resourcePath": "$context.resourcePath",
+            "status": "$context.status",
+            "protocol": "$context.protocol",
+            "responseLength": "$context.responseLength"
+          }
+
+  # CloudWatch Log Group for API Gateway
+  APIGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/apigateway/${Environment}-ai-messaging-api'
+      RetentionInDays: !If [IsProduction, 30, 7]
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-api-logs'
+
+  # Lambda Functions
+  FileUploadFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-ai-messaging-file-upload'
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: !Ref LambdaTimeout
+      MemorySize: !Ref LambdaMemorySize
+      Environment:
+        Variables:
+          ECS_CLUSTER: !ImportValue
+            Fn::Sub: '${Environment}-ai-messaging-cluster-name'
+          ECS_SERVICE: !ImportValue
+            Fn::Sub: '${Environment}-ai-messaging-backend-service-name'
+          S3_BUCKET: !ImportValue
+            Fn::Sub: '${Environment}-ai-messaging-uploads-bucket'
+          ENVIRONMENT: !Ref Environment
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          
+          def lambda_handler(event, context):
+              print(f"File upload event: {json.dumps(event)}")
+              
+              # Process file upload event
+              for record in event['Records']:
+                  bucket = record['s3']['bucket']['name']
+                  key = record['s3']['object']['key']
+                  
+                  print(f"Processing file: {key} from bucket: {bucket}")
+                  
+                  # Trigger ECS task or other processing
+                  # This could be enhanced to trigger specific workflows
+                  
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps('File processing completed')
+              }
+
+  HealthCheckFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Environment}-ai-messaging-health-check'
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          ECS_CLUSTER: !ImportValue
+            Fn::Sub: '${Environment}-ai-messaging-cluster-name'
+          ECS_SERVICE: !ImportValue
+            Fn::Sub: '${Environment}-ai-messaging-backend-service-name'
+          ENVIRONMENT: !Ref Environment
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          
+          def lambda_handler(event, context):
+              try:
+                  # Check ECS service health
+                  ecs = boto3.client('ecs')
+                  
+                  cluster = os.environ['ECS_CLUSTER']
+                  service = os.environ['ECS_SERVICE']
+                  
+                  response = ecs.describe_services(
+                      cluster=cluster,
+                      services=[service]
+                  )
+                  
+                  service_info = response['services'][0]
+                  running_count = service_info['runningCount']
+                  desired_count = service_info['desiredCount']
+                  
+                  if running_count == desired_count and running_count > 0:
+                      return {
+                          'statusCode': 200,
+                          'body': json.dumps({
+                              'status': 'healthy',
+                              'running_tasks': running_count,
+                              'desired_tasks': desired_count
+                          })
+                      }
+                  else:
+                      return {
+                          'statusCode': 503,
+                          'body': json.dumps({
+                              'status': 'unhealthy',
+                              'running_tasks': running_count,
+                              'desired_tasks': desired_count
+                          })
+                      }
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({
+                          'status': 'error',
+                          'message': str(e)
+                      })
+                  }
+
+  # IAM Role for Lambda Functions
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ECSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeServices
+                  - ecs:ListTasks
+                  - ecs:DescribeTasks
+                Resource: '*'
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !ImportValue
+                    Fn::Sub: '${Environment}-ai-messaging-uploads-bucket-arn'
+                  - !Sub '${!ImportValue}/*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-ai-messaging-lambda-role'
+
+  # API Gateway Resources and Methods
+  FileUploadResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref APIGateway
+      ParentId: !GetAtt APIGateway.RootResourceId
+      PathPart: 'file-upload'
+
+  FileUploadMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref APIGateway
+      ResourceId: !Ref FileUploadResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      RequestParameters:
+        method.request.header.Content-Type: false
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FileUploadFunction.Arn}/invocations'
+
+  FileUploadIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      RestApiId: !Ref APIGateway
+      ResourceId: !Ref FileUploadResource
+      HttpMethod: POST
+      Type: AWS_PROXY
+      IntegrationHttpMethod: POST
+      Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FileUploadFunction.Arn}/invocations'
+
+  HealthCheckResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref APIGateway
+      ParentId: !GetAtt APIGateway.RootResourceId
+      PathPart: 'health'
+
+  HealthCheckMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref APIGateway
+      ResourceId: !Ref HealthCheckResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${HealthCheckFunction.Arn}/invocations'
+
+  HealthCheckIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      RestApiId: !Ref APIGateway
+      ResourceId: !Ref HealthCheckResource
+      HttpMethod: GET
+      Type: AWS_PROXY
+      IntegrationHttpMethod: POST
+      Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${HealthCheckFunction.Arn}/invocations'
+
+  # Lambda Permissions
+  FileUploadPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref FileUploadFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*/*'
+
+  HealthCheckPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref HealthCheckFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*/*'
+
+  # S3 Event Notification for File Uploads
+  FileUploadNotification:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref FileUploadFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !ImportValue
+        Fn::Sub: '${Environment}-ai-messaging-uploads-bucket-arn'
+
+  # CloudWatch Alarms
+  APIGatewayErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ai-messaging-api-errors'
+      AlarmDescription: 'API Gateway 4xx and 5xx errors'
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Ref APIGateway
+      TreatMissingData: notBreaching
+
+  APIGatewayLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Environment}-ai-messaging-api-latency'
+      AlarmDescription: 'API Gateway high latency'
+      MetricName: Latency
+      Namespace: AWS/ApiGateway
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Ref APIGateway
+      TreatMissingData: notBreaching
+
+Outputs:
+  APIGatewayId:
+    Description: 'API Gateway ID'
+    Value: !Ref APIGateway
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-api-gateway-id'
+
+  APIGatewayURL:
+    Description: 'API Gateway URL'
+    Value: !Sub 'https://${APIGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-api-gateway-url'
+
+  APIGatewayArn:
+    Description: 'API Gateway ARN'
+    Value: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}'
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-api-gateway-arn'
+
+  FileUploadFunctionArn:
+    Description: 'File Upload Lambda Function ARN'
+    Value: !GetAtt FileUploadFunction.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-file-upload-function-arn'
+
+  HealthCheckFunctionArn:
+    Description: 'Health Check Lambda Function ARN'
+    Value: !GetAtt HealthCheckFunction.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-health-check-function-arn'
+
+  LambdaExecutionRoleArn:
+    Description: 'Lambda Execution Role ARN'
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub '${Environment}-ai-messaging-lambda-execution-role-arn'
+

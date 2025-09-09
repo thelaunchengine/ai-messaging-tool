@@ -1,0 +1,208 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model accounts {
+  id                String  @id
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  users             users   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model contact_inquiries {
+  id                  String    @id
+  firstName           String
+  lastName            String
+  email               String
+  message             String
+  status              String    @default("PENDING")
+  response            String?
+  respondedAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime
+  websiteId           String?
+  fileUploadId        String?
+  submissionStatus    String?   @default("PENDING") @db.VarChar(50)
+  websiteUrl          String?
+  submissionError     String?
+  submittedFormFields Json?
+  submissionResponse  String?
+  retryCount          Int?
+  lastRetryAt         DateTime? @db.Timestamp(6)
+}
+
+model file_uploads {
+  id                    String              @id
+  userId                String
+  filename              String
+  originalName          String
+  fileSize              Int
+  fileType              String
+  status                String              @default("PENDING")
+  totalWebsites         Int                 @default(0)
+  processedWebsites     Int                 @default(0)
+  failedWebsites        Int                 @default(0)
+  totalChunks           Int                 @default(0)
+  completedChunks       Int                 @default(0)
+  filePath              String?
+  processingStartedAt   DateTime?
+  processingCompletedAt DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime
+  users                 users               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  processing_chunks     processing_chunks[]
+  scraping_jobs         scraping_jobs[]
+  websites              websites[]
+
+  @@index([userId], map: "idx_file_uploads_user_id")
+}
+
+model predefined_messages {
+  id             String   @id
+  industry       String
+  service        String
+  message        String
+  status         String   @default("ACTIVE")
+  usageCount     Int      @default(0)
+  createdBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime
+  messageType    String   @default("general")
+  tags           String[]
+  targetAudience String?
+  tone           String   @default("professional")
+}
+
+model processing_chunks {
+  id               String       @id
+  fileUploadId     String
+  chunkNumber      Int
+  startRow         Int
+  endRow           Int
+  totalRecords     Int
+  processedRecords Int          @default(0)
+  failedRecords    Int          @default(0)
+  status           String       @default("PENDING")
+  startedAt        DateTime?
+  completedAt      DateTime?
+  errorMessage     String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime
+  file_uploads     file_uploads @relation(fields: [fileUploadId], references: [id], onDelete: Cascade)
+
+  @@unique([fileUploadId, chunkNumber])
+}
+
+model scraping_jobs {
+  id                String       @id
+  fileUploadId      String
+  status            String       @default("PENDING")
+  totalWebsites     Int
+  processedWebsites Int          @default(0)
+  failedWebsites    Int          @default(0)
+  startedAt         DateTime?
+  completedAt       DateTime?
+  errorMessage      String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime
+  file_uploads      file_uploads @relation(fields: [fileUploadId], references: [id], onDelete: Cascade)
+}
+
+model sessions {
+  id           String   @id
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  users        users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model static_content {
+  id        String   @id
+  type      String
+  title     String
+  content   String
+  status    String   @default("DRAFT")
+  version   Int      @default(1)
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+
+  @@unique([type, version])
+}
+
+model users {
+  id               String         @id
+  name             String?
+  email            String         @unique
+  username         String         @unique
+  password         String?
+  role             String         @default("USER")
+  emailVerified    DateTime?
+  image            String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime
+  status           String         @default("active")
+  resetToken       String?
+  resetTokenExpiry DateTime?
+  accounts         accounts[]
+  file_uploads     file_uploads[]
+  sessions         sessions[]
+  websites         websites[]
+}
+
+model verification_tokens {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model websites {
+  id                  String       @id
+  fileUploadId        String
+  userId              String
+  websiteUrl          String
+  contactFormUrl      String?
+  hasContactForm      Boolean      @default(false)
+  companyName         String?
+  businessType        String?
+  industry            String?
+  aboutUsContent      String?
+  scrapingStatus      String       @default("PENDING")
+  messageStatus       String       @default("PENDING")
+  generatedMessage    String?
+  sentMessage         String?
+  sentAt              DateTime?
+  responseReceived    Boolean      @default(false)
+  responseContent     String?
+  errorMessage        String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime
+  submissionStatus    String?      @default("PENDING") @db.VarChar(50)
+  submissionError     String?
+  submittedFormFields Json?
+  submissionResponse  String?
+  file_uploads        file_uploads @relation(fields: [fileUploadId], references: [id], onDelete: Cascade)
+  users               users        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt], map: "idx_websites_created_at")
+  @@index([fileUploadId], map: "idx_websites_file_upload_id")
+  @@index([scrapingStatus], map: "idx_websites_status")
+}

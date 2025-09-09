@@ -1,0 +1,26 @@
+Service,Category,Purpose,Phase,Monthly Cost,What's Included,Priority
+ECS Fargate,Compute,Container hosting (2-4 tasks),Phase 1,"$58 - $120","2 tasks × 1 vCPU + 2GB RAM × 24/7 + storage",Essential
+RDS PostgreSQL,Database,Managed PostgreSQL database,Phase 1,"$30 - $60","db.t3.small instance + 20GB storage + backups",Essential
+S3,Storage,File storage (100GB),Phase 1,"$2.30 - $5","100GB storage + PUT/GET requests + data transfer",Essential
+ElastiCache Redis,Cache,Caching & message queue,Phase 1,"$19 - $38","cache.t3.micro instance + 0.5GB memory",Essential
+VPC + Security Groups,Networking,Network isolation,Phase 1,$0,"Network isolation + security groups + subnets",Essential
+IAM,Security,Access management,Phase 1,$0,"User/role management + policies + access control",Essential
+Secrets Manager,Security,Credential storage,Phase 1,"$0.40 per secret","Secret storage + API calls + automatic rotation",Essential
+Application Load Balancer,Networking,Traffic distribution,Phase 2,"$18 - $25","ALB hours + LCU usage + health checks",High
+API Gateway,API,API management (100k calls),Phase 2,"$0.35","100k REST API calls + data transfer",High
+Lambda Functions,Compute,Event processing (1M requests),Phase 2,"$0.20","1M requests + compute time + data transfer",High
+SQS,Messaging,Message queuing (1M messages),Phase 2,"$0.40","1M requests + message storage",High
+SNS,Messaging,Notifications (1M messages),Phase 2,"$0.50","1M publishes + delivery attempts",High
+Route 53,DNS,DNS management,Phase 2,"$0.50","Hosted zone + DNS queries",High
+Certificate Manager,Security,SSL certificates,Phase 2,$0,"SSL/TLS certificates + automatic renewal",High
+CloudFront,CDN,Global content delivery,Phase 3,"$8.50 - $17","100GB data transfer + requests",Medium
+WAF,Security,Web application firewall,Phase 3,"$5","Web ACL + rules + requests processed",Medium
+CloudWatch,Monitoring,Monitoring & logging,Phase 3,"$10 - $20","Custom metrics + log storage + dashboards",Medium
+X-Ray,Monitoring,Distributed tracing,Phase 3,"$5","1M traces + data storage",Medium
+CloudTrail,Security,API audit logging,Phase 3,"$2","Management events + data events",Medium
+EventBridge,Events,Event scheduling,Phase 3,"$1","1M custom events + delivery",Medium
+ECR,Container,Container registry,Phase 3,"$0.10","Container image storage + data transfer",Medium
+CodeBuild/CodeDeploy,CI/CD,Automated deployment pipeline,Optional,"$1 - $5","Build minutes + pipeline usage",Low
+Backup,Backup,Automated backups,Optional,"$5 - $15","Backup storage + restore operations",Low
+Cost Explorer,Cost Management,Cost analysis,Optional,$0,"Cost analysis + reports + recommendations",Low
+Budgets,Cost Management,Spending alerts,Optional,$0,"Budget tracking + alerts + notifications",Low
