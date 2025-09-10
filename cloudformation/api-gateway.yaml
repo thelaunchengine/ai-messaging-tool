@@ -77,9 +77,7 @@ Resources:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
       - FileUploadMethod
-      - FileUploadIntegration
       - HealthCheckMethod
-      - HealthCheckIntegration
     Properties:
       RestApiId: !Ref APIGateway
       StageName: !Ref Environment
@@ -138,11 +136,10 @@ Resources:
       Environment:
         Variables:
           ECS_CLUSTER: !ImportValue
-            Fn::Sub: '${Environment}-ai-messaging-cluster-name'
-          ECS_SERVICE: !ImportValue
-            Fn::Sub: '${Environment}-ai-messaging-backend-service-name'
+            Fn::Sub: 'production-ai-messaging-cluster-name'
+          ECS_SERVICE: 'production-ai-messaging-backend-service'
           S3_BUCKET: !ImportValue
-            Fn::Sub: '${Environment}-ai-messaging-uploads-bucket'
+            Fn::Sub: 'production-ai-messaging-uploads-bucket'
           ENVIRONMENT: !Ref Environment
       Code:
         ZipFile: |
@@ -180,9 +177,8 @@ Resources:
       Environment:
         Variables:
           ECS_CLUSTER: !ImportValue
-            Fn::Sub: '${Environment}-ai-messaging-cluster-name'
-          ECS_SERVICE: !ImportValue
-            Fn::Sub: '${Environment}-ai-messaging-backend-service-name'
+            Fn::Sub: 'production-ai-messaging-cluster-name'
+          ECS_SERVICE: 'production-ai-messaging-backend-service'
           ENVIRONMENT: !Ref Environment
       Code:
         ZipFile: |
@@ -270,8 +266,8 @@ Resources:
                   - s3:ListBucket
                 Resource:
                   - !ImportValue
-                    Fn::Sub: '${Environment}-ai-messaging-uploads-bucket-arn'
-                  - !Sub '${!ImportValue}/*'
+                    Fn::Sub: 'production-ai-messaging-uploads-bucket-arn'
+                  - !Sub 'arn:aws:s3:::ai-messaging-tool-production-uploads/*'
       Tags:
         - Key: Name
           Value: !Sub '${Environment}-ai-messaging-lambda-role'
@@ -291,22 +287,10 @@ Resources:
       ResourceId: !Ref FileUploadResource
       HttpMethod: POST
       AuthorizationType: NONE
-      RequestParameters:
-        method.request.header.Content-Type: false
       Integration:
         Type: AWS_PROXY
         IntegrationHttpMethod: POST
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FileUploadFunction.Arn}/invocations'
-
-  FileUploadIntegration:
-    Type: AWS::ApiGatewayV2::Integration
-    Properties:
-      RestApiId: !Ref APIGateway
-      ResourceId: !Ref FileUploadResource
-      HttpMethod: POST
-      Type: AWS_PROXY
-      IntegrationHttpMethod: POST
-      Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FileUploadFunction.Arn}/invocations'
 
   HealthCheckResource:
     Type: AWS::ApiGateway::Resource
@@ -326,16 +310,6 @@ Resources:
         Type: AWS_PROXY
         IntegrationHttpMethod: POST
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${HealthCheckFunction.Arn}/invocations'
-
-  HealthCheckIntegration:
-    Type: AWS::ApiGatewayV2::Integration
-    Properties:
-      RestApiId: !Ref APIGateway
-      ResourceId: !Ref HealthCheckResource
-      HttpMethod: GET
-      Type: AWS_PROXY
-      IntegrationHttpMethod: POST
-      Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${HealthCheckFunction.Arn}/invocations'
 
   # Lambda Permissions
   FileUploadPermission:
