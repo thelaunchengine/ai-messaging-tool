@@ -1,62 +1,26 @@
-# Multi-stage build for production optimization
-FROM node:20-alpine AS base
+# Use Node.js 20 Alpine as base image
+FROM node:20-alpine
 
-# Install dependencies only when needed
-FROM base AS deps
+# Set working directory
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --legacy-peer-deps --only=production
 
-# Rebuild the source code only when needed
-FROM base AS builder
-WORKDIR /app
+# Copy package files
 COPY package*.json ./
+
+# Install all dependencies with legacy peer deps
 RUN npm ci --legacy-peer-deps
 
-# Copy Prisma schema and generate client
+# Copy Prisma schema first
 COPY prisma ./prisma
+
+# Generate Prisma client
 RUN npx prisma generate
 
-# Copy source code
+# Copy rest of source code
 COPY . .
 
-# Build the application
-RUN npm run build
-
-# Production image, copy all the files and run next
-FROM base AS runner
-WORKDIR /app
-
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-
-# Create a non-root user
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
-# Copy built application
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-
-# Copy Prisma files
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-
-# Copy migration script
-COPY migrate-db.js ./
-
-# Set correct permissions
-RUN chown -R nextjs:nodejs /app
-USER nextjs
-
-# Expose port
+# Expose port 3000
 EXPOSE 3000
-ENV PORT=3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/api/health || exit 1
-
-# Start the application
-CMD ["sh", "-c", "echo 'Starting database migration...' && node migrate-db.js && echo 'Starting production server...' && node server.js"]
+# Start the application with database migration
+CMD ["sh", "-c", "echo 'Starting database migration...' && node migrate-db.js && echo 'Migration completed, starting app...' && npm run dev -- -H 0.0.0.0 -p ${PORT:-3000}"]
