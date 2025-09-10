@@ -1,0 +1,64 @@
+name: Deploy to AWS ECS
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: 957440525184.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REPOSITORY_FRONTEND: production-ai-messaging-frontend
+  ECR_REPOSITORY_BACKEND: production-ai-messaging-backend
+  ECR_REPOSITORY_WORKER: production-ai-messaging-worker
+  ECS_CLUSTER: production-ai-messaging-cluster
+  ECS_SERVICE_FRONTEND: production-ai-messaging-frontend-service
+  ECS_SERVICE_BACKEND: production-ai-messaging-backend-service
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build and push Frontend image
+      run: |
+        cd working-code-backup/frontend
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest
+
+    - name: Build and push Backend image
+      run: |
+        cd working-code-backup/backend
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest
+
+    - name: Build and push Worker image
+      run: |
+        cd working-code-backup/backend
+        docker build -f Dockerfile.worker -t $ECR_REGISTRY/$ECR_REPOSITORY_WORKER:latest .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_WORKER:latest
+
+    - name: Update ECS services
+      run: |
+        aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE_FRONTEND --force-new-deployment
+        aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE_BACKEND --force-new-deployment
+
+    - name: Wait for deployment to complete
+      run: |
+        aws ecs wait services-stable --cluster $ECS_CLUSTER --services $ECS_SERVICE_FRONTEND
+        aws ecs wait services-stable --cluster $ECS_CLUSTER --services $ECS_SERVICE_BACKEND
