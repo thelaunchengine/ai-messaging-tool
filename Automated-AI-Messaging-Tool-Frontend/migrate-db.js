@@ -79,4 +79,14 @@ async function migrateDatabase() {
   }
 }
 
-migrateDatabase();
+// Export the function for use in startup script
+module.exports = { migrateDatabase };
+
+// Only run migration if this file is executed directly and SKIP_DATABASE_MIGRATION is not set to 'true'
+if (require.main === module) {
+  if (process.env.SKIP_DATABASE_MIGRATION !== 'true') {
+    migrateDatabase();
+  } else {
+    console.log('⏭️ Skipping database migration (SKIP_DATABASE_MIGRATION=true)');
+  }
+}
