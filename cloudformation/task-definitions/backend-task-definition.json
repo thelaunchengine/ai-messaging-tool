@@ -9,10 +9,11 @@
   "containerDefinitions": [
     {
       "name": "backend",
-      "image": "957440525184.dkr.ecr.us-east-1.amazonaws.com/ai-messaging-backend:latest",
+      "image": "957440525184.dkr.ecr.us-east-1.amazonaws.com/production-ai-messaging-backend:latest",
       "portMappings": [
         {
-          "containerPort": 8000,
+          "containerPort": 8001,
+          "hostPort": 8001,
           "protocol": "tcp"
         }
       ],
@@ -24,11 +25,19 @@
         },
         {
           "name": "PORT",
-          "value": "8000"
+          "value": "8001"
         },
         {
           "name": "DATABASE_URL",
           "value": "postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging"
+        },
+        {
+          "name": "S3_BUCKET_NAME",
+          "value": "ai-messaging-tool-production-uploads"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "us-east-1"
         }
       ],
       "logConfiguration": {
@@ -42,7 +51,7 @@
       "healthCheck": {
         "command": [
           "CMD-SHELL",
-          "curl -f http://localhost:8000/health || exit 1"
+          "curl -f http://localhost:8001/api/health || exit 1"
         ],
         "interval": 30,
         "timeout": 5,
