@@ -4,6 +4,7 @@ S3 Service for file uploads and management
 import boto3
 import os
 import logging
+import asyncio
 from typing import Optional
 from botocore.exceptions import ClientError, NoCredentialsError
 
@@ -29,7 +30,7 @@ class S3Service:
 
     def upload_file(self, file_content: bytes, file_key: str, content_type: str = 'application/octet-stream') -> Optional[str]:
         """
-        Upload file content to S3
+        Upload file content to S3 (synchronous version)
         
         Args:
             file_content: File content as bytes
@@ -38,6 +39,57 @@ class S3Service:
             
         Returns:
             S3 URL if successful, None if failed
+        """
+        try:
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=file_key,
+                Body=file_content,
+                ContentType=content_type
+            )
+            
+            s3_url = f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/{file_key}"
+            logger.info(f"File uploaded to S3: {s3_url}")
+            return s3_url
+            
+        except ClientError as e:
+            logger.error(f"Failed to upload file to S3: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error uploading to S3: {e}")
+            return None
+
+    async def upload_file_async(self, file_content: bytes, file_key: str, content_type: str = 'application/octet-stream') -> Optional[str]:
+        """
+        Upload file content to S3 asynchronously
+        
+        Args:
+            file_content: File content as bytes
+            file_key: S3 object key (path in bucket)
+            content_type: MIME type of the file
+            
+        Returns:
+            S3 URL if successful, None if failed
+        """
+        try:
+            # Run the synchronous S3 operation in a thread pool
+            loop = asyncio.get_event_loop()
+            s3_url = await loop.run_in_executor(
+                None,
+                self._upload_file_sync,
+                file_content,
+                file_key,
+                content_type
+            )
+            return s3_url
+            
+        except Exception as e:
+            logger.error(f"Unexpected error in async upload to S3: {e}")
+            return None
+
+    def _upload_file_sync(self, file_content: bytes, file_key: str, content_type: str) -> Optional[str]:
+        """
+        Synchronous helper method for S3 upload
         """
         try:
             self.s3_client.put_object(
