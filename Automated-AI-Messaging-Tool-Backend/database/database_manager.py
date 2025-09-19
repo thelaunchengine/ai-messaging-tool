@@ -40,13 +40,18 @@ class DatabaseManager:
         try:
             # Temporarily hardcode to ensure we use production database
             logger.info("Connecting with hardcoded production database parameters")
+            import ssl
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            
             self.conn = pg8000.connect(
                 host='production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com',
                 port=5432,
                 user='postgres',
                 password='AiMessaging2024!',
                 database='ai_messaging',
-                ssl_context=True
+                ssl_context=ssl_context
             )
             self.cursor = self.conn.cursor()
         except Exception as e:
@@ -65,13 +70,18 @@ class DatabaseManager:
         try:
             # Temporarily hardcode to ensure we use production database
             logger.info("Getting connection with hardcoded production database parameters")
+            import ssl
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            
             conn = pg8000.connect(
                 host='production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com',
                 port=5432,
                 user='postgres',
                 password='AiMessaging2024!',
                 database='ai_messaging',
-                ssl_context=True
+                ssl_context=ssl_context
             )
             return conn
         except Exception as e:
