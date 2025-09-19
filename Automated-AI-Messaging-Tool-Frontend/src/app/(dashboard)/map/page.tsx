@@ -1,5 +1,5 @@
 // project-imports
-import Maps from 'views/map/map';
+import Maps from 'sections/map/map';
 
 // ==============================|| MAP ||============================== //
 

@@ -89,15 +89,23 @@ export default function HistoryPage() {
       // Always use the working user ID
       let url = `/api/upload?userId=${userId}`;
 
-      // Add pagination and filter parameters
-      const params = [
-        `page=${pageNum}`,
-        `limit=${rowsPerPage}`,
-        `search=${searchTerm}`,
-        `status=${statusFilter}`
-      ];
-
-      url += `&${params.join('&')}`;
+      if (statusFilter !== 'all') {
+        // When filtering by status, fetch ALL data first, then filter and paginate on frontend
+        const params = [
+          `page=1`,
+          `limit=1000`, // Fetch a large number to get all records
+          `search=${searchTerm}`
+        ];
+        url += `&${params.join('&')}`;
+      } else {
+        // When showing all status, use normal pagination
+        const params = [
+          `page=${pageNum}`,
+          `limit=${rowsPerPage}`,
+          `search=${searchTerm}`
+        ];
+        url += `&${params.join('&')}`;
+      }
 
       const response = await fetch(url);
       if (!response.ok) {
@@ -107,15 +115,40 @@ export default function HistoryPage() {
       const data = await response.json();
       
       if (data.fileUploads && Array.isArray(data.fileUploads)) {
-        setFileUploads(data.fileUploads);
-        setPagination(data.pagination || {
-          page: pageNum,
-          limit: rowsPerPage,
-          totalCount: data.fileUploads.length,
-          totalPages: Math.ceil(data.fileUploads.length / rowsPerPage),
-          hasNextPage: false,
-          hasPrevPage: pageNum > 1
-        });
+        let filteredUploads = data.fileUploads;
+        
+        if (statusFilter !== 'all') {
+          // Filter by status
+          filteredUploads = data.fileUploads.filter((upload: any) => 
+            normalizeStatus(upload.status) === statusFilter
+          );
+          
+          // Apply pagination to filtered results
+          const startIndex = (pageNum - 1) * rowsPerPage;
+          const endIndex = startIndex + rowsPerPage;
+          const paginatedUploads = filteredUploads.slice(startIndex, endIndex);
+          
+          setFileUploads(paginatedUploads);
+          setPagination({
+            page: pageNum,
+            limit: rowsPerPage,
+            totalCount: filteredUploads.length,
+            totalPages: Math.ceil(filteredUploads.length / rowsPerPage),
+            hasNextPage: endIndex < filteredUploads.length,
+            hasPrevPage: pageNum > 1
+          });
+        } else {
+          // No filtering, use API pagination
+          setFileUploads(filteredUploads);
+          setPagination(data.pagination || {
+            page: pageNum,
+            limit: rowsPerPage,
+            totalCount: filteredUploads.length,
+            totalPages: Math.ceil(filteredUploads.length / rowsPerPage),
+            hasNextPage: false,
+            hasPrevPage: pageNum > 1
+          });
+        }
       } else {
         console.error('Invalid data structure:', data);
         setFileUploads([]);
@@ -151,6 +184,8 @@ export default function HistoryPage() {
 
   const handleStatusChange = (newStatus: string) => {
     setStatus(newStatus);
+    // Trigger refetch with new status filter
+    fetchFileUploads(1, search, newStatus);
   };
 
   const handleRefresh = () => {
@@ -161,8 +196,34 @@ export default function HistoryPage() {
     router.push(`/upload/${uploadId}/results`);
   };
 
+  // Normalize detailed status to generic status for filtering
+  const normalizeStatus = (status: string) => {
+    if (!status) return 'pending';
+    
+    const statusLower = status.toLowerCase();
+    
+    // Completed statuses
+    if (statusLower.includes('completed') || statusLower.includes('success')) {
+      return 'completed';
+    }
+    
+    // Processing statuses
+    if (statusLower.includes('processing') || statusLower.includes('pending')) {
+      return 'processing';
+    }
+    
+    // Error statuses
+    if (statusLower.includes('error') || statusLower.includes('failed') || statusLower.includes('fail')) {
+      return 'error';
+    }
+    
+    // Default to pending for unknown statuses
+    return 'pending';
+  };
+
   const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
+    const normalizedStatus = normalizeStatus(status);
+    switch (normalizedStatus) {
       case 'completed':
         return 'success';
       case 'processing':
@@ -298,36 +359,36 @@ export default function HistoryPage() {
                   </TableCell>
                   <TableCell>
                     <Chip
-                      label={upload.fileType.toUpperCase()}
+                      label={upload.fileType ? upload.fileType.toUpperCase() : 'UNKNOWN'}
                       size="small"
                       variant="outlined"
                     />
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2">
-                      {formatFileSize(upload.fileSize)}
+                      {formatFileSize(upload.fileSize || 0)}
                     </Typography>
                   </TableCell>
                   <TableCell>
                     <Chip
-                      label={upload.status}
-                      color={getStatusColor(upload.status) as any}
+                      label={normalizeStatus(upload.status || 'unknown')}
+                      color={getStatusColor(upload.status || 'unknown') as any}
                       size="small"
                     />
                   </TableCell>
                   <TableCell>
                     <Box>
                       <Typography variant="body2">
-                        Total: {upload.totalWebsites}
+                        Total: {upload.totalWebsites || 0}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        Processed: {upload.processedWebsites} | Failed: {upload.failedWebsites}
+                        Processed: {upload.processedWebsites || 0} | Failed: {upload.failedWebsites || 0}
                       </Typography>
                     </Box>
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2">
-                      {formatDate(upload.createdAt)}
+                      {upload.createdAt ? formatDate(upload.createdAt) : 'N/A'}
                     </Typography>
                   </TableCell>
                   <TableCell>

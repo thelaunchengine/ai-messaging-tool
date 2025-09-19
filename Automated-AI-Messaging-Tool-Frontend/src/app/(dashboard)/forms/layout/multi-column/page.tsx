@@ -1,5 +1,5 @@
 // project-imports
-import ColumnsLayoutsPage from 'views/forms-tables/forms/layout/ColumnsLayouts';
+import ColumnsLayoutsPage from 'sections/forms/layout/ColumnsLayouts';
 
 // ==============================|| LAYOUTS -  COLUMNS ||============================== //
 

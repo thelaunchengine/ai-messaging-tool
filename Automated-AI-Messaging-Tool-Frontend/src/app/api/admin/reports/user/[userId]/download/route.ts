@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { getServerSession } from 'next-auth';
-import { authOptions } from 'utils/authOptions';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
+    }
+  }
+});
 
 export async function GET(
   request: NextRequest,
@@ -12,19 +16,20 @@ export async function GET(
   try {
     const { userId } = await params;
     
-    // Get user ID from the authenticated session
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
+    // Get admin user ID from query parameters (passed from frontend)
+    const { searchParams } = new URL(request.url);
+    const adminUserId = searchParams.get('adminUserId');
+
+    if (!adminUserId) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        { error: 'Admin user ID is required' },
+        { status: 400 }
       );
     }
 
     // Check if user is admin
-    const adminUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
+    const adminUser = await prisma.users.findUnique({
+      where: { id: adminUserId },
       select: { role: true }
     });
 
@@ -36,7 +41,7 @@ export async function GET(
     }
 
     // Get user details
-    const user = await prisma.user.findUnique({
+    const user = await prisma.users.findUnique({
       where: { id: userId },
       select: { 
         id: true, 
@@ -82,7 +87,7 @@ export async function GET(
     };
 
     // Get all file uploads for this user
-    const fileUploads = await prisma.fileUpload.findMany({
+    const fileUploads = await prisma.file_uploads.findMany({
       where: { userId },
       include: {
         websites: {

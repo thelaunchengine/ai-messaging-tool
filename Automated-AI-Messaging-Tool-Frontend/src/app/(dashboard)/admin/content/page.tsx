@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Box,
   Grid,
   Typography,
   TextField,
@@ -19,6 +18,7 @@ import {
   DialogContent,
   DialogActions
 } from '@mui/material';
+import { Box } from '@mui/system';
 import { Save, Edit, Preview, Description, Security, Help, Cookie, Info, CheckCircle } from '@mui/icons-material';
 import MainCard from '../../../../components/MainCard';
 

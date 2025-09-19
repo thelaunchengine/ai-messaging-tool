@@ -1,0 +1,18 @@
+[Unit]
+Description=AI Messaging Backend
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=www-data
+WorkingDirectory=/home/xb3353/Automated-AI-Messaging-Tool-Backend
+Environment=PATH=/home/xb3353/Automated-AI-Messaging-Tool-Backend/venv/bin
+EnvironmentFile=/home/xb3353/Automated-AI-Messaging-Tool-Backend/.env
+ExecStart=/home/xb3353/Automated-AI-Messaging-Tool-Backend/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

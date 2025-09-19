@@ -28,7 +28,8 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  CircularProgress
+  CircularProgress,
+  TablePagination
 } from '@mui/material';
 import { Search, Visibility, Block, CheckCircle, Edit, Delete, Add, FilterList, Download } from '@mui/icons-material';
 import MainCard from '../../../../components/MainCard';
@@ -55,6 +56,8 @@ export default function AdminUsersPage() {
     email: '',
     password: ''
   });
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   // Validation function
   const validateForm = () => {
@@ -291,6 +294,18 @@ export default function AdminUsersPage() {
     (user) => user.name.toLowerCase().includes(searchTerm.toLowerCase()) || user.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // Pagination logic
+  const paginatedUsers = filteredUsers.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+
+  const handleChangePage = (event: unknown, newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ mb: 3 }}>
@@ -360,7 +375,7 @@ export default function AdminUsersPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredUsers.map((user) => (
+              {paginatedUsers.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell>
                     <Stack direction="row" alignItems="center" spacing={2}>
@@ -410,6 +425,19 @@ export default function AdminUsersPage() {
             </TableBody>
           </Table>
         </TableContainer>
+        
+        {/* Pagination */}
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 2 }}>
+          <TablePagination
+            component="div"
+            count={filteredUsers.length}
+            page={page}
+            onPageChange={handleChangePage}
+            rowsPerPage={rowsPerPage}
+            rowsPerPageOptions={[10, 25, 50, 100]}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+          />
+        </Box>
       </MainCard>
 
       {/* User Details Dialog */}
@@ -456,10 +484,22 @@ export default function AdminUsersPage() {
       <Dialog open={addUserDialogOpen} onClose={() => {
         setAddUserDialogOpen(false);
         setFormErrors({ name: '', email: '', password: '' });
+        setError('');
+        setSuccess('');
       }} maxWidth="sm" fullWidth>
         <DialogTitle>Add New User</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
+            {error && (
+              <Alert severity="error" onClose={() => setError('')}>
+                {error}
+              </Alert>
+            )}
+            {success && (
+              <Alert severity="success" onClose={() => setSuccess('')}>
+                {success}
+              </Alert>
+            )}
             <TextField
               fullWidth
               label="Name *"

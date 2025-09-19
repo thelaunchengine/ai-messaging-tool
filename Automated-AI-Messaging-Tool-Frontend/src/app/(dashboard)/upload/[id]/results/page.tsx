@@ -618,7 +618,7 @@ const ResultsPage = () => {
                             )}
                             
                             {/* Submission Response */}
-                            {website.submissionResponse && (
+                            {website.responseContent && (
                               <Box>
                                 <Typography variant="body2" color="text.secondary" gutterBottom>
                                   Submission Response:
@@ -629,20 +629,20 @@ const ResultsPage = () => {
                                   borderRadius: 1,
                                   fontFamily: 'monospace'
                                 }}>
-                                  {website.submissionResponse}
+                                  {website.responseContent}
                                 </Typography>
                               </Box>
                             )}
                             
                             {/* Error Message */}
-                            {website.submissionError && (
+                            {website.errorMessage && (
                               <Box>
                                 <Typography variant="body2" color="text.secondary" gutterBottom>
                                   Error:
                                 </Typography>
                                 <Alert severity="error" sx={{ py: 0 }}>
                                   <Typography variant="body2">
-                                    {website.submissionError}
+                                    {website.errorMessage}
                                   </Typography>
                                 </Alert>
                               </Box>

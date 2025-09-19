@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, ReactNode } from 'react';
+import { useEffect, ReactNode, useState } from 'react';
 
 // material-ui
 import useMediaQuery from '@mui/material/useMediaQuery';
@@ -9,6 +9,9 @@ import Container from '@mui/material/Container';
 import Links from '@mui/material/Link';
 import Toolbar from '@mui/material/Toolbar';
 import Box from '@mui/material/Box';
+import Drawer from '@mui/material/Drawer';
+import IconButton from '@mui/material/IconButton';
+import MenuIcon from '@mui/icons-material/Menu';
 
 // project-imports
 import CustomSidebar from 'components/CustomSidebar';
@@ -31,8 +34,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { menuMasterLoading } = useGetMenuMaster();
   const downXL = useMediaQuery((theme) => theme.breakpoints.down('xl'));
   const downLG = useMediaQuery((theme) => theme.breakpoints.down('lg'));
+  const downMD = useMediaQuery((theme) => theme.breakpoints.down('md'));
 
   const { container, miniDrawer, menuOrientation } = useConfig();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const isHorizontal = menuOrientation === MenuOrientation.HORIZONTAL && !downLG;
 
@@ -41,6 +46,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const url = ispValueAvailable ? 'https://1.envato.market/jrEAbP' : 'https://1.envato.market/zNkqj6';
   const pathname = usePathname();
   const isAdminRoute = pathname.startsWith('/admin');
+
+  // Handle mobile drawer toggle
+  const handleDrawerToggle = () => {
+    setMobileOpen(!mobileOpen);
+  };
 
   // set media wise responsive drawer
   useEffect(() => {
@@ -67,23 +77,50 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   return (
     <Box sx={{ display: 'flex', width: '100%' }}>
-      <Header />
-      {!isHorizontal ? <CustomSidebar /> : <HorizontalBar />}
+      <Header onMenuClick={handleDrawerToggle} />
+      
+      {/* Desktop Sidebar */}
+      {!isHorizontal && !downMD && <CustomSidebar />}
+      
+      {/* Mobile Drawer */}
+      <Drawer
+        variant="temporary"
+        open={mobileOpen}
+        onClose={handleDrawerToggle}
+        ModalProps={{
+          keepMounted: true, // Better open performance on mobile
+        }}
+        sx={{
+          display: { xs: 'block', md: 'none' },
+          '& .MuiDrawer-paper': {
+            boxSizing: 'border-box',
+            width: DRAWER_WIDTH,
+            backgroundColor: '#F8FAFC',
+            borderRight: 'none',
+            boxShadow: '0 2px 12px 0 rgba(80,112,251,0.04)'
+          },
+        }}
+      >
+        <CustomSidebar onClose={handleDrawerToggle} />
+      </Drawer>
+
+      {/* Horizontal Bar for large screens */}
+      {isHorizontal && <HorizontalBar />}
 
       <Box 
         component="main" 
         className={isAdminRoute ? 'admin-main-content' : ''}
         sx={{ 
-          width: `calc(100% - ${DRAWER_WIDTH}px)`, 
+          width: { xs: '100%', md: `calc(100% - ${DRAWER_WIDTH}px)` }, 
           flexGrow: 1, 
           p: { xs: 1, sm: 3 },
           backgroundColor: '#F9FAFB',
           minHeight: '100vh',
-          marginLeft: `${DRAWER_WIDTH}px`,
+          marginLeft: { xs: 0, md: `${DRAWER_WIDTH}px` },
           // Admin-specific styling
           ...(isAdminRoute && {
             '&.admin-main-content': {
-              marginLeft: '115px !important'
+              marginLeft: { xs: 0, md: '115px !important' }
             }
           })
         }}

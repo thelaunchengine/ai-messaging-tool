@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
+    }
+  }
+});
 
 const updateMessageSchema = z.object({
   industry: z.string().min(1).optional(),
   service: z.string().min(1).optional(),
-  message: z.string().min(10).optional(),
+  message: z.string().min(1).optional(),
   status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
   messageType: z.enum(['general', 'partnership', 'inquiry', 'custom']).optional(),
   tone: z.enum(['professional', 'friendly', 'formal', 'casual']).optional(),
@@ -21,7 +27,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const message = await prisma.predefinedMessage.findUnique({
+    const message = await prisma.predefined_messages.findUnique({
       where: { id }
     });
 
@@ -46,7 +52,7 @@ export async function PUT(
     const validatedData = updateMessageSchema.parse(body);
 
     // Check if message exists
-    const existingMessage = await prisma.predefinedMessage.findUnique({
+    const existingMessage = await prisma.predefined_messages.findUnique({
       where: { id }
     });
 
@@ -54,7 +60,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Message not found' }, { status: 404 });
     }
 
-    const updatedMessage = await prisma.predefinedMessage.update({
+    const updatedMessage = await prisma.predefined_messages.update({
       where: { id },
       data: {
         ...validatedData,
@@ -89,7 +95,7 @@ export async function DELETE(
   try {
     const { id } = await params;
     // Check if message exists
-    const existingMessage = await prisma.predefinedMessage.findUnique({
+    const existingMessage = await prisma.predefined_messages.findUnique({
       where: { id }
     });
 
@@ -97,7 +103,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Message not found' }, { status: 404 });
     }
 
-    await prisma.predefinedMessage.delete({
+    await prisma.predefined_messages.delete({
       where: { id }
     });
 

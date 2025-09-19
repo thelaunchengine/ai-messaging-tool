@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
+    }
+  }
+});
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -50,11 +56,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         scrapingStatus: true,
         messageStatus: true,
         generatedMessage: true,
-        sentMessage: true,
-        sentAt: true,
-        responseReceived: true,
-        responseContent: true,
-        errorMessage: true,
+        submissionStatus: true,
+        submissionResponse: true,
+        submissionError: true,
+        submittedFormFields: true,
         createdAt: true,
         updatedAt: true
       },
@@ -64,9 +69,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       skip,
       take: limit
     });
+
+    // Return websites with submission status (already in database)
+    const websitesWithSubmissionStatus = websites.map(website => ({
+      ...website,
+      submissionStatus: website.submissionStatus || "PENDING"
+    }));
     
     return NextResponse.json({
-      websites,
+      websites: websitesWithSubmissionStatus,
       pagination: {
         page,
         limit,
@@ -79,5 +90,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   } catch (error) {
     console.error('Error fetching websites:', error);
     return NextResponse.json({ error: 'Failed to fetch websites' }, { status: 500 });
+  } finally {
+    await prisma.$disconnect();
   }
 }

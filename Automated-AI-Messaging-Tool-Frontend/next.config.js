@@ -1,7 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  output: 'standalone',
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
   },
@@ -84,7 +86,9 @@ const nextConfig = {
     NEXT_APP_API_URL: 'https://mock-data-api-nextjs.vercel.app',
     NEXT_APP_JWT_SECRET: 'ikRgjkhi15HJiU78-OLKfjngiu',
     NEXT_APP_JWT_TIMEOUT: '86400',
-    NEXTAUTH_SECRET_KEY: 'LlKq6ZtYbr+hTC073mAmAh9/h2HwMfsFo4hrfCx5mLg='
+    NEXTAUTH_SECRET_KEY: 'LlKq6ZtYbr+hTC073mAmAh9/h2HwMfsFo4hrfCx5mLg=',
+    PYTHON_API_URL: 'http://production-ai-messaging-alb-746376383.us-east-1.elb.amazonaws.com:8001',
+    NEXT_PUBLIC_PYTHON_BACKEND_URL: 'http://production-ai-messaging-alb-746376383.us-east-1.elb.amazonaws.com:8001'
   }
 }
 

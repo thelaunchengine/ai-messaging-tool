@@ -18,7 +18,11 @@ import { usePathname } from 'next/navigation';
 
 // ==============================|| MAIN LAYOUT - HEADER ||============================== //
 
-export default function Header() {
+interface HeaderProps {
+  onMenuClick?: () => void;
+}
+
+export default function Header({ onMenuClick }: HeaderProps) {
   const downLG = useMediaQuery((theme) => theme.breakpoints.down('lg'));
   const pathname = usePathname();
   const isAdminRoute = pathname.startsWith('/admin');
@@ -30,7 +34,7 @@ export default function Header() {
   const isHorizontal = menuOrientation === MenuOrientation.HORIZONTAL && !downLG;
 
   // header content
-  const headerContent = useMemo(() => <HeaderContent />, []);
+  const headerContent = useMemo(() => <HeaderContent onMenuClick={onMenuClick} />, [onMenuClick]);
 
   // common header
   const mainHeader: ReactNode = (

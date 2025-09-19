@@ -1,19 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { getServerSession } from 'next-auth';
-import { authOptions } from 'utils/authOptions';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
+    }
+  }
+});
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: userId } = await params;
 
     // Get user with comprehensive data
-    const user = await prisma.user.findUnique({
+    const user = await prisma.users.findUnique({
       where: { id: userId },
       include: {
-        fileUploads: {
+        file_uploads: {
           select: {
             id: true,
             filename: true,
@@ -44,12 +48,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     // Calculate user statistics
-    const totalFiles = user.fileUploads.length;
+    const totalFiles = user.file_uploads.length;
     const totalWebsites = user.websites.length;
     const processedWebsites = user.websites.filter(w => w.scrapingStatus === 'COMPLETED').length;
     const failedWebsites = user.websites.filter(w => w.scrapingStatus === 'FAILED').length;
     const messagesSent = user.websites.filter(w => w.messageStatus === 'SENT').length;
-    const activeFiles = user.fileUploads.filter(f => f.status === 'PROCESSING').length;
+    const activeFiles = user.file_uploads.filter(f => f.status === 'PROCESSING').length;
 
     const userStats = {
       id: user.id,
@@ -83,7 +87,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     
     // Check if email is being updated and if it already exists for another user
     if (email) {
-      const existingUser = await prisma.user.findFirst({
+      const existingUser = await prisma.users.findFirst({
         where: {
           email: email,
           id: { not: userId } // Exclude current user
@@ -106,7 +110,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       updateData.password = await bcrypt.hash(password, 12);
     }
     
-    const user = await prisma.user.update({
+    const user = await prisma.users.update({
       where: { id: userId },
       data: updateData,
       select: {
@@ -130,7 +134,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: userId } = await params;
-    await prisma.user.delete({ where: { id: userId } });
+    await prisma.users.delete({ where: { id: userId } });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error deleting user:', error);

@@ -1,0 +1,52 @@
+# AI Messaging Project - Full Stack Development
+
+## Project Structure
+This project consists of two separate codebases:
+
+### Backend (Python/FastAPI)
+- **Location**: `/Users/apple/Downloads/ai-messaging-python-backend/`
+- **Technology**: Python, FastAPI, Celery, PostgreSQL, Redis
+- **Purpose**: API server, background tasks, database management
+
+### Frontend (Next.js)
+- **Location**: `/Users/apple/Downloads/aimsg_onserver/Automated-AI-Messaging-Tool-Frontend/`
+- **Technology**: Next.js, React, TypeScript, Material-UI
+- **Purpose**: Admin interface, user management, file uploads
+
+## Development Workflow
+- **Backend**: Python API server with Celery workers
+- **Frontend**: Next.js admin interface
+- **Integration**: Frontend calls backend APIs
+- **Upload System**: Backend has automatic upload scripts
+
+## Key Files to Consider
+- **Backend**: `main.py`, `celery_app.py`, `celery_tasks/`, `database/`
+- **Frontend**: `src/app/`, `src/components/`, `src/api/`
+- **Shared**: API endpoints, data models, configuration
+
+## Upload System
+- Backend has automatic upload scripts: `upload-to-server.sh`, `watch-and-upload.sh`
+- Frontend changes need manual deployment or separate CI/CD
+- Backend runs on port 8000, Frontend on port 3001
+
+## Always Consider Both Codebases
+When making changes, consider:
+1. **Backend API changes** → Update frontend API calls
+2. **Frontend UI changes** → Ensure backend endpoints support them
+3. **Database changes** → Update both backend models and frontend interfaces
+4. **Configuration changes** → Update both environments
+
+## Server Deployment
+- **Backend**: `103.215.159.51:8000`
+- **Frontend**: `103.215.159.51:3001`
+- **Services**: FastAPI, Celery, Next.js
+
+## Database Configuration
+- **Database**: PostgreSQL
+- **Connection String**: `postgresql://postgres:cDtrtoOqpdkAzMcLSd%401847@localhost:5432/aimsgdb`
+- **Environment Variable**: `DATABASE_URL` (optional override)
+- **Location**: Local PostgreSQL instance on server
+description:
+globs:
+alwaysApply: false
+---

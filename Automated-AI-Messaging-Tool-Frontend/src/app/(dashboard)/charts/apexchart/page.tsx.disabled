@@ -1,0 +1,8 @@
+// project-imports
+import Apexcharts from 'sections/charts/apexchart';
+
+// ==============================|| APEX CHARTS ||============================== //
+
+export default function Apexchart() {
+  return <Apexcharts />;
+}

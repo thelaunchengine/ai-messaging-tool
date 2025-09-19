@@ -1,5 +1,5 @@
 // project-imports
-import ClipboardPage from 'views/forms-tables/forms/plugins/ClipboardPage';
+import ClipboardPage from 'sections/forms/plugins/ClipboardPage';
 
 // ==============================|| PLUGIN - CLIPBOARD ||============================== //
 

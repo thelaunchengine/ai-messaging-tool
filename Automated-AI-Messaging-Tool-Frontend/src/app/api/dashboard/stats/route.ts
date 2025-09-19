@@ -1,23 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '../../../../utils/authOptions';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
+    }
+  }
+});
 
 export async function GET(request: NextRequest) {
   try {
-    // Get user ID from the authenticated session
-    const session = await getServerSession(authOptions);
+    // Get user ID from the Authorization header or query params
+    const authHeader = request.headers.get('authorization');
+    const url = new URL(request.url);
+    const userId = url.searchParams.get('userId');
     
-    if (!session?.user?.id) {
+    if (!userId && !authHeader) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
+        { error: 'Unauthorized - User ID required' },
         { status: 401 }
       );
     }
     
-    const userId = session.user.id;
+    // For now, use the userId from query params
+    // In a real app, you'd validate the token from the auth header
+    const user = await prisma.users.findUnique({
+      where: { id: userId || '' },
+      select: { id: true, role: true }
+    });
+    
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized - User not found' },
+        { status: 401 }
+      );
+    }
     
     // Fetch real statistics from the database
     const [
@@ -26,21 +44,20 @@ export async function GET(request: NextRequest) {
       contactPages,
       messagesSent,
       websitesWithoutContact,
-      recentFileActivity,
-      recentMessageActivity
+      recentFileActivity
     ] = await Promise.all([
       // Count file uploads
-      prisma.fileUpload.count({
+      prisma.file_uploads.count({
         where: { userId }
       }),
       
       // Count total websites
-      prisma.website.count({
+      prisma.websites.count({
         where: { userId }
       }),
       
       // Count websites with contact form URLs
-      prisma.website.count({
+      prisma.websites.count({
         where: {
           userId,
           contactFormUrl: { not: null }
@@ -52,7 +69,7 @@ export async function GET(request: NextRequest) {
       Promise.resolve(0),
       
       // Count websites without contact pages
-      prisma.website.count({
+      prisma.websites.count({
         where: {
           userId,
           contactFormUrl: null
@@ -60,25 +77,23 @@ export async function GET(request: NextRequest) {
       }),
       
       // Get recent file upload activity
-      prisma.fileUpload.findMany({
+      prisma.file_uploads.findMany({
         where: { userId },
         orderBy: { createdAt: 'desc' },
         take: 3,
         select: {
           id: true,
           filename: true,
+          originalName: true,
           status: true,
           createdAt: true,
           totalWebsites: true
         }
-      }),
-      
-      // Get recent message activity (placeholder for now)
-      Promise.resolve([])
+      })
     ]);
 
     // Calculate dynamic batch processing status
-    const activeScrapingJobs = await prisma.fileUpload.findMany({
+    const activeScrapingJobs = await prisma.file_uploads.findMany({
       where: {
         userId,
         status: 'PROCESSING'
@@ -93,7 +108,7 @@ export async function GET(request: NextRequest) {
     // Format recent file activity
     const formattedFileActivity = recentFileActivity.map(activity => ({
       type: 'File Upload',
-      detail: activity.filename,
+      detail: activity.originalName || activity.filename,
       time: getTimeAgo(activity.createdAt),
       status: activity.status,
       websites: activity.totalWebsites

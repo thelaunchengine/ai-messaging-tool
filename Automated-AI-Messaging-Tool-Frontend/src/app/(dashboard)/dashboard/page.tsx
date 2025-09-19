@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
 import Box from '@mui/material/Box';
 import Grid from '@mui/material/Grid';
 import Stack from '@mui/material/Stack';
@@ -73,16 +72,26 @@ interface DashboardStats {
 }
 
 export default function DashboardPage() {
-  const { data: session } = useSession();
+  const [user, setUser] = useState<any>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Get user from localStorage
+    const userData = localStorage.getItem('user');
+    if (userData) {
+      setUser(JSON.parse(userData));
+    }
+  }, []);
+
+  useEffect(() => {
     const fetchStats = async () => {
+      if (!user) return;
+      
       try {
         setLoading(true);
-        const response = await fetch('/api/dashboard/stats');
+        const response = await fetch(`/api/dashboard/stats?userId=${user.id}`);
         
         if (!response.ok) {
           throw new Error('Failed to fetch dashboard statistics');
@@ -98,7 +107,7 @@ export default function DashboardPage() {
     };
 
     fetchStats();
-  }, []);
+  }, [user]);
 
   if (loading) {
     return (
@@ -132,7 +141,7 @@ export default function DashboardPage() {
     <Box sx={{ p: 3 }}>
       <Box sx={{ mb: 3 }}>
         <Typography variant="h4" fontWeight={700} sx={{ color: '#23272E' }}>
-          Welcome, {session?.user?.name || 'User'}! AI Messaging Tool Dashboard
+          Welcome, {user?.name || 'User'}! AI Messaging Tool Dashboard
         </Typography>
       </Box>
 

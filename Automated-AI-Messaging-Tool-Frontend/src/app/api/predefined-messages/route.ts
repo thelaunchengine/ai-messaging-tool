@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
+    }
+  }
+});
 
 const createMessageSchema = z.object({
   industry: z.string().min(1),
@@ -23,6 +29,8 @@ export async function GET() {
   } catch (error) {
     console.error('Error fetching predefined messages:', error);
     return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 });
+  } finally {
+    await prisma.$disconnect();
   }
 }
 
@@ -53,5 +61,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Validation error', details: error.errors }, { status: 400 });
     }
     return NextResponse.json({ error: 'Failed to create message', details: error.message }, { status: 500 });
+  } finally {
+    await prisma.$disconnect();
   }
 }

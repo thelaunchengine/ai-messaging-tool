@@ -1,0 +1,59 @@
+name: Deploy Frontend to EC2
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**'
+  workflow_dispatch:
+
+env:
+  EC2_HOST: 34.195.237.115
+  EC2_USER: ubuntu
+  EC2_KEY: ${{ secrets.EC2_SSH_KEY }}
+
+jobs:
+  deploy:
+    name: Deploy Frontend to EC2
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: 'package-lock.json'
+
+    - name: Install dependencies
+      run: |
+        npm ci
+
+    - name: Build application
+      run: |
+        npm run build
+
+    - name: Deploy to EC2
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ env.EC2_HOST }}
+        username: ${{ env.EC2_USER }}
+        key: ${{ env.EC2_KEY }}
+        script: |
+          cd /home/ubuntu/ai-messaging-tool/Automated-AI-Messaging-Tool-Frontend
+          git pull origin main
+          npm ci
+          npm run build
+          pm2 restart frontend
+
+    - name: Verify deployment
+      run: |
+        echo "Waiting for frontend to be ready..."
+        sleep 30
+        echo "Testing frontend endpoint..."
+        curl -f --max-time 10 http://${{ env.EC2_HOST }}:3000 || exit 1
+        echo "Frontend deployment successful!"

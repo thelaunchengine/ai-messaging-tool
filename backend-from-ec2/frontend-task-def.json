@@ -1,0 +1,116 @@
+{
+    "taskDefinitionArn": "arn:aws:ecs:us-east-1:957440525184:task-definition/production-ai-messaging-frontend:3",
+    "containerDefinitions": [
+        {
+            "name": "frontend",
+            "image": "957440525184.dkr.ecr.us-east-1.amazonaws.com/production-ai-messaging-frontend:latest",
+            "cpu": 0,
+            "links": [],
+            "portMappings": [
+                {
+                    "containerPort": 3000,
+                    "hostPort": 3000,
+                    "protocol": "tcp"
+                }
+            ],
+            "essential": true,
+            "entryPoint": [],
+            "command": [],
+            "environment": [
+                {
+                    "name": "NEXT_PUBLIC_BACKEND_URL",
+                    "value": "http://production-ai-messaging-alb-1795060974.us-east-1.elb.amazonaws.com:8000"
+                },
+                {
+                    "name": "NEXT_PUBLIC_BASE_URL",
+                    "value": "http://production-ai-messaging-alb-1795060974.us-east-1.elb.amazonaws.com:3000"
+                },
+                {
+                    "name": "NODE_ENV",
+                    "value": "production"
+                },
+                {
+                    "name": "NEXTAUTH_URL",
+                    "value": "http://production-ai-messaging-alb-1795060974.us-east-1.elb.amazonaws.com:3000"
+                },
+                {
+                    "name": "PORT",
+                    "value": "3000"
+                },
+                {
+                    "name": "NEXTAUTH_SECRET",
+                    "value": "your-secret-key-change-this-in-production"
+                }
+            ],
+            "environmentFiles": [],
+            "mountPoints": [],
+            "volumesFrom": [],
+            "secrets": [],
+            "dnsServers": [],
+            "dnsSearchDomains": [],
+            "extraHosts": [],
+            "dockerSecurityOptions": [],
+            "dockerLabels": {},
+            "ulimits": [],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/aws/ecs/production-ai-messaging-frontend",
+                    "awslogs-region": "us-east-1",
+                    "awslogs-stream-prefix": "frontend"
+                },
+                "secretOptions": []
+            },
+            "systemControls": [],
+            "credentialSpecs": []
+        }
+    ],
+    "family": "production-ai-messaging-frontend",
+    "taskRoleArn": "arn:aws:iam::957440525184:role/ai-messaging-ecs-TaskRole-iViLMEuEY7i6",
+    "executionRoleArn": "arn:aws:iam::957440525184:role/ai-messaging-ecr-ECRTaskRole-fP6EnUKQZc84",
+    "networkMode": "awsvpc",
+    "revision": 3,
+    "volumes": [],
+    "status": "ACTIVE",
+    "requiresAttributes": [
+        {
+            "name": "com.amazonaws.ecs.capability.logging-driver.awslogs"
+        },
+        {
+            "name": "ecs.capability.execution-role-awslogs"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.ecr-auth"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.19"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.17"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.task-iam-role"
+        },
+        {
+            "name": "ecs.capability.execution-role-ecr-pull"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
+        },
+        {
+            "name": "ecs.capability.task-eni"
+        }
+    ],
+    "placementConstraints": [],
+    "compatibilities": [
+        "EC2",
+        "FARGATE"
+    ],
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "256",
+    "memory": "512",
+    "registeredAt": "2025-09-07T23:52:22.994000+05:30",
+    "registeredBy": "arn:aws:iam::957440525184:user/xbyte"
+}

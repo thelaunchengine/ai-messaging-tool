@@ -38,6 +38,10 @@
         {
           "name": "AWS_REGION",
           "value": "us-east-1"
+        },
+        {
+          "name": "REDIS_URL",
+          "value": "redis://production-ai-messaging-redis.gmhyra.ng.0001.use1.cache.amazonaws.com:6379/0"
         }
       ],
       "logConfiguration": {

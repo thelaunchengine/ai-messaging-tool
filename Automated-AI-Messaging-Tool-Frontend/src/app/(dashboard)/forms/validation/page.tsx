@@ -1,5 +1,5 @@
 // project-imports
-import FormsValidationPage from 'views/forms-tables/forms/FormsValidation';
+import FormsValidationPage from 'sections/forms/FormsValidation';
 
 // ==============================|| FORMS VALIDATION - FORMIK ||============================== //
 

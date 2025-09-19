@@ -1,5 +1,5 @@
 // project-imports
-import DropzonePage from 'views/forms-tables/forms/plugins/DropzonePage';
+import DropzonePage from 'sections/forms/plugins/DropzonePage';
 
 // ==============================|| PLUGIN - DROPZONE ||============================== //
 

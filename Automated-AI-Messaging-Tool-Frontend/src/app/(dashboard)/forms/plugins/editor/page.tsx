@@ -1,5 +1,5 @@
 // project-imports
-import EditorPage from 'views/forms-tables/forms/plugins/EditorPage';
+import EditorPage from 'sections/forms/plugins/EditorPage';
 
 // ==============================|| PLUGIN - EDITOR ||============================== //
 

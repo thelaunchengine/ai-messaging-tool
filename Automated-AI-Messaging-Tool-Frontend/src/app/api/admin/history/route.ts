@@ -1,36 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { getServerSession } from 'next-auth';
-import { authOptions } from 'utils/authOptions';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
+    }
+  }
+});
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Get user ID from query parameters (passed from frontend)
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'User ID is required' },
+        { status: 400 }
+      );
     }
 
-    const adminUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
+    // Check if user is admin
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
       select: { role: true }
     });
 
-    if (adminUser?.role !== 'ADMIN' && adminUser?.role !== 'admin') {
-      return NextResponse.json({ error: 'Access denied. Admin privileges required.' }, { status: 403 });
+    if (user?.role !== 'ADMIN' && user?.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Access denied. Admin privileges required.' },
+        { status: 403 }
+      );
     }
 
-    const fileUploads = await prisma.fileUpload.findMany({
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true
-          }
-        },
+    // Admin can see all file uploads from all users
+
+    // Get file uploads with user data, handling cases where user might not exist
+    const fileUploads = await prisma.file_uploads.findMany({
+      select: {
+        id: true,
+        userId: true,
+        originalName: true,
+        fileSize: true,
+        status: true,
+        totalWebsites: true,
+        createdAt: true,
+        updatedAt: true,
         websites: {
           select: {
             id: true,
@@ -42,16 +59,27 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' }
     });
 
+    // Get user data separately to handle missing relationships
+    const userIds = fileUploads.map(f => f.userId);
+    const users = await prisma.users.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, name: true, email: true }
+    });
+
+    const userMap = new Map(users.map(u => [u.id, u]));
+
     const historyData = fileUploads.map(upload => {
       const processedWebsites = upload.websites.filter(w => w.scrapingStatus === 'COMPLETED').length;
       const failedWebsites = upload.websites.filter(w => w.scrapingStatus === 'FAILED').length;
       const messagesSent = upload.websites.filter(w => w.messageStatus === 'SENT').length;
       
+      const user = userMap.get(upload.userId);
+      
       return {
         id: upload.id,
         fileName: upload.originalName,
-        userName: upload.user.name || 'Unknown User',
-        userEmail: upload.user.email,
+        userName: user?.name || 'Unknown User',
+        userEmail: user?.email || 'Unknown Email',
         fileSize: upload.fileSize || 'Unknown',
         fileType: upload.originalName.split('.').pop()?.toUpperCase() || 'Unknown',
         uploadDate: upload.createdAt,
@@ -70,5 +98,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error fetching admin history:', error);
     return NextResponse.json({ error: 'Failed to fetch history data' }, { status: 500 });
+  } finally {
+    await prisma.$disconnect();
   }
 } 

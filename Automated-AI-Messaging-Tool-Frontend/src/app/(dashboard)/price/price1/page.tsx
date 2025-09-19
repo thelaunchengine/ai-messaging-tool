@@ -1,5 +1,5 @@
 // project-imports
-import Pricing1Page from 'views/price/Pricing1';
+import Pricing1Page from 'sections/pricing/Pricing1';
 
 // ==============================|| PRICING ||============================== //
 

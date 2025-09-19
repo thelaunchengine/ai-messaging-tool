@@ -60,6 +60,7 @@ import MainCard from '../../../../components/MainCard';
 
 export default function AdminReportsPage() {
   const [reportData, setReportData] = useState([]);
+  const [statistics, setStatistics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -71,7 +72,17 @@ export default function AdminReportsPage() {
     const fetchReportData = async () => {
       try {
         setLoading(true);
-        const response = await fetch('/api/admin/reports');
+        
+        // Get admin user data from localStorage
+        const adminUser = localStorage.getItem('adminUser');
+        if (!adminUser) {
+          throw new Error('Admin user not found. Please login again.');
+        }
+        
+        const user = JSON.parse(adminUser);
+        const userId = user.id;
+        
+        const response = await fetch(`/api/admin/reports?userId=${userId}&t=${Date.now()}`);
         
         if (!response.ok) {
           throw new Error('Failed to fetch report data');
@@ -79,6 +90,7 @@ export default function AdminReportsPage() {
         
         const data = await response.json();
         setReportData(data.reports || []);
+        setStatistics(data.statistics || null);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred');
       } finally {
@@ -136,7 +148,17 @@ export default function AdminReportsPage() {
 
   const handleDownloadUserReport = async (userId: string, userName: string) => {
     try {
-      const response = await fetch(`/api/admin/reports/user/${userId}/download`);
+      // Get admin user data from localStorage
+      const adminUser = localStorage.getItem('adminUser');
+      if (!adminUser) {
+        console.error('Admin user not found. Please login again.');
+        return;
+      }
+      
+      const user = JSON.parse(adminUser);
+      const adminUserId = user.id;
+      
+      const response = await fetch(`/api/admin/reports/user/${userId}/download?adminUserId=${adminUserId}`);
       
       if (response.ok) {
         const blob = await response.blob();
@@ -175,10 +197,10 @@ export default function AdminReportsPage() {
   };
 
   const stats = [
-    { label: 'Total Users', value: reportData.length, icon: <People />, color: 'primary' },
-    { label: 'Total Files', value: reportData.reduce((sum, item) => sum + (item.filesUploaded || 0), 0), icon: <CloudUpload />, color: 'secondary' },
-    { label: 'Total Websites', value: reportData.reduce((sum, item) => sum + (item.websitesProcessed || 0), 0), icon: <CheckCircle />, color: 'success' },
-    { label: 'Total Messages', value: reportData.reduce((sum, item) => sum + (item.messagesSent || 0), 0), icon: <Analytics />, color: 'info' }
+    { label: 'Total Users', value: statistics?.totalUsers || reportData.length, icon: <People />, color: 'primary' },
+    { label: 'Total Files', value: statistics?.totalFiles || reportData.reduce((sum, item) => sum + (item.filesUploaded || 0), 0), icon: <CloudUpload />, color: 'secondary' },
+    { label: 'Total Websites', value: statistics?.totalWebsites || reportData.reduce((sum, item) => sum + (item.websitesProcessed || 0), 0), icon: <CheckCircle />, color: 'success' },
+    { label: 'Total Messages', value: statistics?.totalMessagesSent || reportData.reduce((sum, item) => sum + (item.messagesSent || 0), 0), icon: <Analytics />, color: 'info' }
   ];
 
   if (loading) {
@@ -283,7 +305,6 @@ export default function AdminReportsPage() {
                 <TableCell>Files Uploaded</TableCell>
                 <TableCell>Websites Processed</TableCell>
                 <TableCell>Messages Sent</TableCell>
-                <TableCell>Last Activity</TableCell>
                 <TableCell>Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -315,7 +336,6 @@ export default function AdminReportsPage() {
                   <TableCell>{item.filesUploaded || 0}</TableCell>
                   <TableCell>{item.websitesProcessed || 0}</TableCell>
                   <TableCell>{item.messagesSent || 0}</TableCell>
-                  <TableCell>{item.lastActivity || 'N/A'}</TableCell>
                   <TableCell>
                     <Stack direction="row" spacing={1}>
                       <IconButton 
@@ -323,7 +343,7 @@ export default function AdminReportsPage() {
                         color="primary"
                         component={Link}
                         href={`/admin/users/${item.id}`}
-                        title="View user details"
+                        title="View user uploads"
                       >
                         <VisibilityIcon />
                       </IconButton>

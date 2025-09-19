@@ -4,6 +4,8 @@ import { useMemo } from 'react';
 import { Theme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import Box from '@mui/material/Box';
+import IconButton from '@mui/material/IconButton';
+import MenuIcon from '@mui/icons-material/Menu';
 
 // project-imports
 import FullScreen from './FullScreen';
@@ -21,7 +23,11 @@ import DrawerHeader from 'layout/DashboardLayout/Drawer/DrawerHeader';
 
 // ==============================|| HEADER - CONTENT ||============================== //
 
-export default function HeaderContent() {
+interface HeaderContentProps {
+  onMenuClick?: () => void;
+}
+
+export default function HeaderContent({ onMenuClick }: HeaderContentProps) {
   const { menuOrientation } = useConfig();
 
   const downLG = useMediaQuery((theme: Theme) => theme.breakpoints.down('lg'));
@@ -32,7 +38,20 @@ export default function HeaderContent() {
 
   return (
     <>
-      {/* Removed DrawerHeader, MegaMenuSection, and Localization for a cleaner header */}
+      {/* Mobile Menu Button */}
+      <Box sx={{ display: { xs: 'flex', md: 'none' }, alignItems: 'center', mr: 2 }}>
+        <IconButton
+          color="inherit"
+          aria-label="open drawer"
+          edge="start"
+          onClick={onMenuClick}
+          sx={{ mr: 2 }}
+        >
+          <MenuIcon />
+        </IconButton>
+      </Box>
+      
+      {/* Header Content */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flex: 1, gap: 2 }}>
         <Profile />
       </Box>

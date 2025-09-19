@@ -1,5 +1,5 @@
 // project-imports
-import BasicLayouts from 'views/forms-tables/forms/layout/BasicLayouts';
+import BasicLayouts from 'sections/forms/layout/BasicLayouts';
 
 // ==============================|| LAYOUTS - BASIC ||============================== //
 

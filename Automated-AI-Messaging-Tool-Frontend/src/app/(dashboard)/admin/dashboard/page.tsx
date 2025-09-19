@@ -110,7 +110,17 @@ export default function AdminDashboardPage() {
     const fetchAdminStats = async () => {
       try {
         setLoading(true);
-        const response = await fetch('/api/admin/dashboard/stats');
+        
+        // Get admin user data from localStorage
+        const adminUser = localStorage.getItem('adminUser');
+        if (!adminUser) {
+          throw new Error('Admin user not found. Please login again.');
+        }
+        
+        const user = JSON.parse(adminUser);
+        const userId = user.id;
+        
+        const response = await fetch(`/api/admin/dashboard/stats?userId=${userId}`);
         
         if (!response.ok) {
           throw new Error('Failed to fetch admin dashboard statistics');

@@ -1,5 +1,5 @@
 // project-imports
-import ActionBarPage from 'views/forms-tables/forms/layout/ActionBar';
+import ActionBarPage from 'sections/forms/layout/ActionBar';
 
 // ==============================|| LAYOUTS- ACTION BAR ||============================== //
 

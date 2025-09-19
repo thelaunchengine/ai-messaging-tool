@@ -40,10 +40,18 @@ export default function ProfilePage() {
 
   const handleLogout = async () => {
     try {
-      await signOut({ 
-        callbackUrl: '/login',
-        redirect: true 
-      });
+      // Clear localStorage tokens
+      localStorage.removeItem('adminToken');
+      localStorage.removeItem('adminUser');
+      localStorage.removeItem('userToken');
+      localStorage.removeItem('user');
+      
+      // Get the current origin to construct the correct login URL
+      const currentOrigin = window.location.origin;
+      const loginUrl = `${currentOrigin}/login`;
+      
+      // Redirect to login page
+      window.location.href = loginUrl;
     } catch (error) {
       console.error('Logout error:', error);
       // Fallback: redirect to login page

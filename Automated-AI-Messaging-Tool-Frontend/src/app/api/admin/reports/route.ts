@@ -1,25 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '../../_lib/auth';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
+    }
+  }
+});
 
 export async function GET(request: NextRequest) {
   try {
-    // Get user ID from the authenticated session
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
+    // Get user ID from query parameters (passed from frontend)
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+
+    if (!userId) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        { error: 'User ID is required' },
+        { status: 400 }
       );
     }
 
     // Check if user is admin
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
       select: { role: true }
     });
 
@@ -31,14 +36,15 @@ export async function GET(request: NextRequest) {
     }
     
     // Fetch all users with their statistics
-    const users = await prisma.user.findMany({
+    const users = await prisma.users.findMany({
       include: {
-        fileUploads: {
+        file_uploads: {
           select: {
             id: true,
             filename: true,
             status: true,
             totalWebsites: true,
+            processedWebsites: true,
             createdAt: true
           }
         },
@@ -46,7 +52,9 @@ export async function GET(request: NextRequest) {
           select: {
             id: true,
             websiteUrl: true,
-            contactFormUrl: true
+            contactFormUrl: true,
+            sentMessage: true,
+            messageStatus: true
           }
         }
       }
@@ -54,10 +62,10 @@ export async function GET(request: NextRequest) {
 
     // Process user data to create reports
     const reports = users.map(user => {
-      const filesUploaded = user.fileUploads.length;
+      const filesUploaded = user.file_uploads.length;
       const websitesProcessed = user.websites.length;
-      const messagesSent = 0; // Placeholder - would come from messages table
-      const successRate = websitesProcessed > 0 ? Math.round((websitesProcessed / (websitesProcessed + 10)) * 100) : 0; // Mock calculation
+      const messagesSent = user.websites.filter(w => w.sentMessage && w.messageStatus === 'SENT').length;
+      const successRate = websitesProcessed > 0 ? Math.round((messagesSent / websitesProcessed) * 100) : 0;
       
       return {
         id: user.id,
@@ -67,18 +75,39 @@ export async function GET(request: NextRequest) {
         websitesProcessed,
         messagesSent,
         successRate,
-        lastActivity: user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A',
-        subscription: 'basic', // Placeholder - would come from subscription table
+        subscription: user.role === 'ADMIN' ? 'admin' : 'basic',
         status: user.status
       };
     });
 
-    return NextResponse.json({ reports });
+    // Calculate overall statistics
+    const totalFiles = await prisma.file_uploads.count();
+    const totalWebsites = await prisma.websites.count();
+    const totalMessagesSent = await prisma.websites.count({
+      where: {
+        sentMessage: {
+          not: null
+        },
+        messageStatus: 'SENT'
+      }
+    });
+
+    return NextResponse.json({ 
+      reports,
+      statistics: {
+        totalUsers: users.length,
+        totalFiles,
+        totalWebsites,
+        totalMessagesSent
+      }
+    });
   } catch (error) {
     console.error('Error fetching admin reports:', error);
     return NextResponse.json(
       { error: 'Failed to fetch admin reports' },
       { status: 500 }
     );
+  } finally {
+    await prisma.$disconnect();
   }
 } 

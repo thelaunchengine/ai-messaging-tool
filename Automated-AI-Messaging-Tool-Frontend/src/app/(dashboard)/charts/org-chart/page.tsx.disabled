@@ -1,0 +1,8 @@
+// project-imports
+import OrgChartPage from 'sections/charts/org-chart';
+
+// ==============================|| ORGANIZATION CHARTS ||============================== //
+
+export default function OrgChart() {
+  return <OrgChartPage />;
+}

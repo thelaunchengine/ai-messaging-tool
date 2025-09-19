@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
 import Box from '@mui/material/Box';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
@@ -35,12 +34,32 @@ const adminMenuItems = [
   { text: 'List History', icon: <HistoryIcon />, path: '/admin/history' }
 ];
 
-export default function CustomSidebar() {
+interface CustomSidebarProps {
+  onClose?: () => void;
+}
+
+export default function CustomSidebar({ onClose }: CustomSidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const { data: session, status } = useSession();
+  const [isAdmin, setIsAdmin] = useState(false);
   const isAdminRoute = pathname.startsWith('/admin');
-  const isAdmin = session?.user?.role === 'ADMIN' || session?.user?.role === 'admin';
+
+  useEffect(() => {
+    // Check localStorage for admin authentication
+    const adminUser = localStorage.getItem('adminUser');
+    const adminToken = localStorage.getItem('adminToken');
+    
+    if (adminUser && adminToken) {
+      try {
+        const user = JSON.parse(adminUser);
+        setIsAdmin(user.role === 'ADMIN' || user.role === 'admin');
+      } catch (e) {
+        setIsAdmin(false);
+      }
+    } else {
+      setIsAdmin(false);
+    }
+  }, [pathname]);
 
   // Show admin menu if user is admin and on admin route, otherwise show user menu
   const menuList = (isAdmin && isAdminRoute) ? adminMenuItems : userMenuItems;
@@ -147,7 +166,15 @@ export default function CustomSidebar() {
                   <ListItemButton
                     component="button"
                     selected={isActive}
-                    onClick={() => item.path && router.push(item.path)}
+                    onClick={() => {
+                      if (item.path) {
+                        router.push(item.path);
+                        // Close mobile drawer when menu item is clicked
+                        if (onClose) {
+                          onClose();
+                        }
+                      }
+                    }}
                     sx={{
                       borderRadius: 2,
                       mx: 0.5,

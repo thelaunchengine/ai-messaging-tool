@@ -1,25 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '../../../../utils/authOptions';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
+    }
+  }
+});
 
 export async function GET(request: NextRequest) {
   try {
-    // Get user ID from the authenticated session
-    const session = await getServerSession(authOptions);
+    // Get user ID from query parameters (passed from frontend)
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
     
-    if (!session?.user?.id) {
+    if (!userId) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        { error: 'User ID is required' },
+        { status: 400 }
       );
     }
 
     // Check if user is admin
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
       select: { role: true }
     });
 
@@ -43,13 +48,13 @@ export async function GET(request: NextRequest) {
       activeScrapingJobs
     ] = await Promise.all([
       // Count total file uploads across all users
-      prisma.fileUpload.count(),
+      prisma.file_uploads.count(),
       
       // Count total websites across all users
-      prisma.website.count(),
+      prisma.websites.count(),
       
       // Count websites with contact form URLs
-      prisma.website.count({
+      prisma.websites.count({
         where: {
           contactFormUrl: { not: null }
         }
@@ -59,27 +64,27 @@ export async function GET(request: NextRequest) {
       Promise.resolve(0),
       
       // Count websites without contact pages
-      prisma.website.count({
+      prisma.websites.count({
         where: {
           contactFormUrl: null
         }
       }),
       
       // Count total users
-      prisma.user.count(),
+      prisma.users.count(),
       
       // Count active users
-      prisma.user.count({
+      prisma.users.count({
         where: { status: 'active' }
       }),
       
       // Count disabled users
-      prisma.user.count({
+      prisma.users.count({
         where: { status: 'disabled' }
       }),
       
       // Get active scraping jobs
-      prisma.fileUpload.findMany({
+      prisma.file_uploads.findMany({
         where: {
           status: 'PROCESSING'
         },
@@ -151,5 +156,7 @@ export async function GET(request: NextRequest) {
       { error: 'Failed to fetch admin dashboard statistics' },
       { status: 500 }
     );
+  } finally {
+    await prisma.$disconnect();
   }
 } 

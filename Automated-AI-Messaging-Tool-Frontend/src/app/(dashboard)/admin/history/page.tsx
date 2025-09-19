@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Grid,
@@ -46,9 +46,9 @@ import {
   CheckCircle,
   ErrorOutline,
   Schedule,
+  Autorenew,
   Person,
-  FileDownload,
-  FilterList
+  FileDownload
 } from '@mui/icons-material';
 import MainCard from '../../../../components/MainCard';
 
@@ -90,7 +90,17 @@ export default function AdminHistoryPage() {
   const fetchHistoryData = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/admin/history');
+      
+      // Get admin user data from localStorage
+      const adminUser = localStorage.getItem('adminUser');
+      if (!adminUser) {
+        throw new Error('Admin user not found. Please login again.');
+      }
+      
+      const user = JSON.parse(adminUser);
+      const userId = user.id;
+      
+      const response = await fetch(`/api/admin/history?userId=${userId}`);
       if (response.ok) {
         const data = await response.json();
         setHistoryData(data.history || []);
@@ -105,20 +115,50 @@ export default function AdminHistoryPage() {
     }
   };
 
-  const filteredData = historyData.filter(
-    (item) =>
-      (item.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.userEmail.toLowerCase().includes(searchTerm.toLowerCase())) &&
-      (statusFilter === 'all' || item.status === statusFilter) &&
-      (userFilter === 'all' || item.userName === userFilter)
-  );
+  // Normalize detailed status to generic status for filtering
+  const normalizeStatus = (status: string) => {
+    if (!status) return 'pending';
+    
+    const statusLower = status.toLowerCase();
+    
+    // Completed statuses
+    if (statusLower.includes('completed') || statusLower.includes('success')) {
+      return 'completed';
+    }
+    
+    // Processing statuses
+    if (statusLower.includes('processing') || statusLower.includes('pending')) {
+      return 'processing';
+    }
+    
+    // Error/Failed statuses
+    if (statusLower.includes('error') || statusLower.includes('failed') || statusLower.includes('fail')) {
+      return 'failed';
+    }
+    
+    // Default to pending for unknown statuses
+    return 'pending';
+  };
+
+  const filteredData = useMemo(() => {
+    if (!historyData || !Array.isArray(historyData)) {
+      return [];
+    }
+    return historyData.filter(
+      (item) =>
+        (item.fileName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.userName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.userEmail?.toLowerCase().includes(searchTerm.toLowerCase())) &&
+        (statusFilter === 'all' || normalizeStatus(item.status) === statusFilter) &&
+        (userFilter === 'all' || item.userName === userFilter)
+    );
+  }, [historyData, searchTerm, statusFilter, userFilter]);
 
   // Pagination calculations
-  const paginatedData = filteredData.slice(
+  const paginatedData = useMemo(() => filteredData.slice(
     page * rowsPerPage,
     page * rowsPerPage + rowsPerPage
-  );
+  ), [filteredData, page, rowsPerPage]);
 
   const handleChangePage = (event: unknown, newPage: number) => {
     setPage(newPage);
@@ -129,13 +169,31 @@ export default function AdminHistoryPage() {
     setPage(0);
   };
 
-  const stats = [
-    { label: 'Total Lists', value: historyData.length, icon: <CloudUpload />, color: 'primary' },
-    { label: 'Processed', value: historyData.filter((f) => f.status === 'completed').length, icon: <CheckCircle />, color: 'success' },
-    { label: 'Failed', value: historyData.filter((f) => f.status === 'failed').length, icon: <ErrorOutline />, color: 'error' }
-  ];
+  const stats = useMemo(() => {
+    if (!historyData || !Array.isArray(historyData)) {
+      return [
+        { label: 'Total Lists', value: 0, icon: <CloudUpload />, color: 'primary' },
+        { label: 'Pending', value: 0, icon: <Schedule />, color: 'warning' },
+        { label: 'Processing', value: 0, icon: <Autorenew />, color: 'info' },
+        { label: 'Processed', value: 0, icon: <CheckCircle />, color: 'success' },
+        { label: 'Failed', value: 0, icon: <ErrorOutline />, color: 'error' }
+      ];
+    }
+    return [
+      { label: 'Total Lists', value: historyData.length, icon: <CloudUpload />, color: 'primary' },
+      { label: 'Pending', value: historyData.filter((f) => normalizeStatus(f.status) === 'pending').length, icon: <Schedule />, color: 'warning' },
+      { label: 'Processing', value: historyData.filter((f) => normalizeStatus(f.status) === 'processing').length, icon: <Autorenew />, color: 'info' },
+      { label: 'Processed', value: historyData.filter((f) => normalizeStatus(f.status) === 'completed').length, icon: <CheckCircle />, color: 'success' },
+      { label: 'Failed', value: historyData.filter((f) => normalizeStatus(f.status) === 'failed').length, icon: <ErrorOutline />, color: 'error' }
+    ];
+  }, [historyData]);
 
-  const uniqueUsers = Array.from(new Set(historyData.map((f) => f.userName)));
+  const uniqueUsers = useMemo(() => {
+    if (!historyData || !Array.isArray(historyData)) {
+      return [];
+    }
+    return Array.from(new Set(historyData.map((f) => f.userName)));
+  }, [historyData]);
 
   const handleViewUserFiles = (user: any) => {
     setSelectedUser(user);
@@ -144,22 +202,35 @@ export default function AdminHistoryPage() {
 
   const handleDownload = async (fileId: string) => {
     try {
-      const response = await fetch(`/api/admin/history/${fileId}/download`);
+      // Get admin user ID from localStorage
+      const adminUser = localStorage.getItem('adminUser');
+      if (!adminUser) {
+        console.error('Admin user not found');
+        alert('Admin authentication required');
+        return;
+      }
+      
+      const user = JSON.parse(adminUser);
+      const response = await fetch(`/api/admin/history/${fileId}/download?userId=${user.id}`);
+      
       if (response.ok) {
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = historyData.find(item => item.id === fileId)?.fileName || 'download';
+        a.download = historyData.find(item => item.id === fileId)?.fileName || 'download.csv';
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
       } else {
-        console.error('Failed to download file');
+        const errorData = await response.json();
+        console.error('Failed to download file:', errorData.error);
+        alert(`Download failed: ${errorData.error}`);
       }
     } catch (error) {
       console.error('Error downloading file:', error);
+      alert('Error downloading file');
     }
   };
 
@@ -266,8 +337,9 @@ export default function AdminHistoryPage() {
               <InputLabel>Status</InputLabel>
               <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} label="Status">
                 <MenuItem value="all">All Status</MenuItem>
-                <MenuItem value="completed">Processed</MenuItem>
+                <MenuItem value="pending">Pending</MenuItem>
                 <MenuItem value="processing">Processing</MenuItem>
+                <MenuItem value="completed">Processed</MenuItem>
                 <MenuItem value="failed">Failed</MenuItem>
               </Select>
             </FormControl>
@@ -289,20 +361,39 @@ export default function AdminHistoryPage() {
             <Stack direction="row" spacing={1} sx={{ height: '56px', alignItems: 'center' }}>
               <Button 
                 variant="outlined" 
-                startIcon={<FilterList />} 
+                startIcon={<Download />}
                 fullWidth
                 size="medium"
                 sx={{ height: '40px' }}
+                onClick={() => {
+                  // Export all history data as CSV
+                  const csvData = historyData.map(item => ({
+                    'File Name': item.fileName,
+                    'User': item.userName,
+                    'Email': item.userEmail,
+                    'Status': item.status,
+                    'Websites': item.websitesCount,
+                    'Messages Sent': item.messagesSent,
+                    'Upload Date': new Date(item.uploadDate).toLocaleDateString()
+                  }));
+                  
+                  const csvContent = [
+                    Object.keys(csvData[0]).join(','),
+                    ...csvData.map(row => Object.values(row).join(','))
+                  ].join('\n');
+                  
+                  const blob = new Blob([csvContent], { type: 'text/csv' });
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `admin-history-${new Date().toISOString().split('T')[0]}.csv`;
+                  document.body.appendChild(a);
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                  document.body.removeChild(a);
+                }}
               >
-                Apply Filters
-              </Button>
-              <Button 
-                variant="outlined" 
-                startIcon={<Download />}
-                size="medium"
-                sx={{ height: '40px' }}
-              >
-                Export History
+                Export
               </Button>
             </Stack>
           </Grid>
@@ -312,16 +403,16 @@ export default function AdminHistoryPage() {
       {/* File History Table */}
       <MainCard title="List Upload History">
         <TableContainer>
-          <Table>
+          <Table sx={{ minWidth: 800 }}>
             <TableHead>
               <TableRow>
-                <TableCell>File</TableCell>
-                <TableCell>User</TableCell>
-                <TableCell>Upload Date</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Websites</TableCell>
-                <TableCell>Messages Sent</TableCell>
-                <TableCell>Actions</TableCell>
+                <TableCell sx={{ minWidth: 200 }}>File</TableCell>
+                <TableCell sx={{ minWidth: 180 }}>User</TableCell>
+                <TableCell sx={{ minWidth: 120 }}>Upload Date</TableCell>
+                <TableCell sx={{ minWidth: 100 }}>Status</TableCell>
+                <TableCell sx={{ minWidth: 80 }}>Websites</TableCell>
+                <TableCell sx={{ minWidth: 100 }}>Messages Sent</TableCell>
+                <TableCell sx={{ minWidth: 80 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -329,7 +420,7 @@ export default function AdminHistoryPage() {
                 <TableRow key={row.id}>
                   <TableCell>
                     <Box>
-                      <Typography variant="subtitle2" fontWeight={600}>
+                      <Typography variant="subtitle2" fontWeight={600} sx={{ wordBreak: 'break-word' }}>
                         {row.fileName}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
@@ -340,11 +431,11 @@ export default function AdminHistoryPage() {
                   <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
                       <Avatar sx={{ mr: 2, width: 32, height: 32 }}>{row.userName.charAt(0)}</Avatar>
-                      <Box>
-                        <Typography variant="subtitle2" fontWeight={600}>
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Typography variant="subtitle2" fontWeight={600} sx={{ wordBreak: 'break-word' }}>
                           {row.userName}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
                           {row.userEmail}
                         </Typography>
                       </Box>
@@ -358,8 +449,8 @@ export default function AdminHistoryPage() {
                   </TableCell>
                   <TableCell>
                     <Chip
-                      label={row.status}
-                      color={row.status === 'completed' ? 'success' : row.status === 'processing' ? 'warning' : 'error'}
+                      label={normalizeStatus(row.status)}
+                      color={normalizeStatus(row.status) === 'completed' ? 'success' : normalizeStatus(row.status) === 'processing' ? 'warning' : 'error'}
                       size="small"
                     />
                   </TableCell>

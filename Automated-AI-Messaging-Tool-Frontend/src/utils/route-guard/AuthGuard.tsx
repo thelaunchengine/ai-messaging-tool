@@ -1,10 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 // next
 import { useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
 
 // project-imports
 import Loader from 'components/Loader';
@@ -15,17 +14,46 @@ import { GuardProps } from 'types/auth';
 // ==============================|| AUTH GUARD ||============================== //
 
 export default function AuthGuard({ children }: GuardProps) {
-  const { data: session, status } = useSession();
   const router = useRouter();
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    if (status === 'loading') return;
-    if (!session?.user || session.user.role !== 'USER') {
-      router.push('/login');
-    }
-  }, [session, status, router]);
+    // Check for user authentication (localStorage-based)
+    const checkAuth = () => {
+      // If we're on the login page, don't check authentication
+      if (window.location.pathname === '/login') {
+        setIsAuthenticated(false);
+        setIsLoading(false);
+        return;
+      }
 
-  if (status === 'loading' || !session?.user || session.user.role !== 'USER') return <Loader />;
+      const userToken = localStorage.getItem('userToken');
+      const user = localStorage.getItem('user');
+      
+      if (userToken && user) {
+        try {
+          const userData = JSON.parse(user);
+          if (userData.role === 'user') {
+            setIsAuthenticated(true);
+            setIsLoading(false);
+            return;
+          }
+        } catch (e) {
+          // Invalid user data
+        }
+      }
+      
+      // Not authenticated - redirect to login
+      router.push('/login');
+      setIsLoading(false);
+    };
+
+    checkAuth();
+  }, [router]);
+
+  if (isLoading) return <Loader />;
+  if (!isAuthenticated) return <Loader />;
 
   return <>{children}</>;
 }

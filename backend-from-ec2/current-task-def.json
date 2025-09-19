@@ -1,0 +1,123 @@
+{
+    "containerDefinitions": [
+        {
+            "name": "backend",
+            "image": "957440525184.dkr.ecr.us-east-1.amazonaws.com/production-ai-messaging-backend:v2",
+            "cpu": 0,
+            "links": [],
+            "portMappings": [
+                {
+                    "containerPort": 8000,
+                    "hostPort": 8000,
+                    "protocol": "tcp"
+                }
+            ],
+            "essential": true,
+            "entryPoint": [],
+            "command": [],
+            "environment": [
+                {
+                    "name": "S3_BUCKET",
+                    "value": "ai-messaging-tool-production-uploads"
+                },
+                {
+                    "name": "REDIS_HOST",
+                    "value": "production-ai-messaging-redis.cache.amazonaws.com"
+                },
+                {
+                    "name": "PORT",
+                    "value": "8000"
+                },
+                {
+                    "name": "REDIS_PORT",
+                    "value": "6379"
+                },
+                {
+                    "name": "DB_PORT",
+                    "value": "5432"
+                },
+                {
+                    "name": "GEMINI_API_KEY",
+                    "value": "AIzaSyAktRAFpxfniqX0ZCFswTNKQh59alVeSGY"
+                },
+                {
+                    "name": "NODE_ENV",
+                    "value": "production"
+                },
+                {
+                    "name": "DB_NAME",
+                    "value": "ai_messaging"
+                },
+                {
+                    "name": "DB_HOST",
+                    "value": "production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com"
+                }
+            ],
+            "environmentFiles": [],
+            "mountPoints": [],
+            "volumesFrom": [],
+            "secrets": [],
+            "dnsServers": [],
+            "dnsSearchDomains": [],
+            "extraHosts": [],
+            "dockerSecurityOptions": [],
+            "dockerLabels": {},
+            "ulimits": [],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/aws/ecs/production-ai-messaging-backend",
+                    "awslogs-region": "us-east-1",
+                    "awslogs-stream-prefix": "backend"
+                },
+                "secretOptions": []
+            },
+            "systemControls": [],
+            "credentialSpecs": []
+        }
+    ],
+    "family": "production-ai-messaging-backend",
+    "taskRoleArn": "arn:aws:iam::957440525184:role/ai-messaging-ecs-TaskRole-iViLMEuEY7i6",
+    "executionRoleArn": "arn:aws:iam::957440525184:role/ai-messaging-ecr-ECRTaskRole-fP6EnUKQZc84",
+    "networkMode": "awsvpc",
+    "volumes": [],
+    "requiresAttributes": [
+        {
+            "name": "com.amazonaws.ecs.capability.logging-driver.awslogs"
+        },
+        {
+            "name": "ecs.capability.execution-role-awslogs"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.ecr-auth"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.19"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.17"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.task-iam-role"
+        },
+        {
+            "name": "ecs.capability.execution-role-ecr-pull"
+        },
+        {
+            "name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
+        },
+        {
+            "name": "ecs.capability.task-eni"
+        }
+    ],
+    "placementConstraints": [],
+    "compatibilities": [
+        "EC2",
+        "FARGATE"
+    ],
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "512",
+    "memory": "1024"
+}

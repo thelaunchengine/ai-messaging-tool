@@ -1,0 +1,38 @@
+[Unit]
+Description=Celery Worker Service for AI Messaging Backend
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=forking
+User=xb3353
+Group=xb3353
+WorkingDirectory=/home/xb3353/Automated-AI-Messaging-Tool-Backend
+Environment=PATH=/home/xb3353/Automated-AI-Messaging-Tool-Backend/venv/bin
+Environment=PYTHONPATH=/home/xb3353/Automated-AI-Messaging-Tool-Backend
+
+# Start multiple workers
+ExecStart=/bin/bash -c 'source venv/bin/activate && nohup celery -A celery_app worker --loglevel=info --concurrency=2 --queues=default,scraping,file_processing,ai_processing --hostname=worker1@%%h --max-tasks-per-child=1000 > logs/celery_worker1.log 2>&1 & nohup celery -A celery_app worker --loglevel=info --concurrency=2 --queues=default,scraping,file_processing,ai_processing --hostname=worker2@%%h --max-tasks-per-child=1000 > logs/celery_worker2.log 2>&1 &'
+
+# Stop all workers
+ExecStop=/bin/bash -c 'pkill -f "celery.*worker"'
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/xb3353/Automated-AI-Messaging-Tool-Backend/logs
+
+[Install]
+WantedBy=multi-user.target 

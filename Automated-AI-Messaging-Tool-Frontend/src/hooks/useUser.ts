@@ -1,5 +1,4 @@
-// next
-import { useSession } from 'next-auth/react';
+import { useState, useEffect } from 'react';
 
 interface UserProps {
   name: string;
@@ -10,30 +9,33 @@ interface UserProps {
 }
 
 export default function useUser() {
-  const { data: session } = useSession();
-  if (session) {
-    const user = session?.user;
-    const provider = session?.provider;
-    let thumb = user?.image || '/assets/images/users/avatar-1.png';
-    if (provider === 'cognito') {
-      const email = user?.email?.split('@');
-      user!.name = email ? email[0] : 'Jone Doe';
+  const [user, setUser] = useState<UserProps | false>(false);
+
+  useEffect(() => {
+    // Check localStorage for user data
+    const adminUser = localStorage.getItem('adminUser');
+    const regularUser = localStorage.getItem('user');
+    
+    let userData = null;
+    if (adminUser) {
+      userData = JSON.parse(adminUser);
+    } else if (regularUser) {
+      userData = JSON.parse(regularUser);
     }
 
-    if (!user?.image) {
-      user!.image = '/assets/images/users/avatar-1.png';
-      thumb = '/assets/images/users/avatar-thumb-1.png';
+    if (userData) {
+      const newUser: UserProps = {
+        name: userData.name || 'User',
+        email: userData.email || 'user@example.com',
+        avatar: '/assets/images/users/avatar-1.png',
+        thumb: '/assets/images/users/avatar-thumb-1.png',
+        role: userData.role || 'USER'
+      };
+      setUser(newUser);
+    } else {
+      setUser(false);
     }
+  }, []);
 
-    const newUser: UserProps = {
-      name: user?.name || 'Jone Doe',
-      email: user?.email || 'doe@codedthemes.com',
-      avatar: user?.image || '/assets/images/users/avatar-1.png',
-      thumb,
-      role: 'UI/UX Designer'
-    };
-
-    return newUser;
-  }
-  return false;
+  return user;
 }

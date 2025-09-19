@@ -1,5 +1,5 @@
 // project-imports
-import MaskPage from 'views/forms-tables/forms/plugins/MaskPage';
+import MaskPage from 'sections/forms/plugins/MaskPage';
 
 // ==============================|| PLUGIN - MASK INPUT ||============================== //
 

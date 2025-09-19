@@ -181,7 +181,7 @@ const AdminUserUploadsPage = () => {
   };
 
   const handleViewResults = (fileUploadId: string) => {
-    router.push(`/upload/${fileUploadId}/results`);
+    router.push(`/admin/upload/${fileUploadId}/results`);
   };
 
   if (loading) {
@@ -238,7 +238,7 @@ const AdminUserUploadsPage = () => {
                     return (
                       <TableRow key={row.id}>
                         <TableCell>
-                          <Link href={`/upload/${row.id}/results`} style={{ color: "#1976d2", textDecoration: "underline", cursor: "pointer" }}>
+                          <Link href={`/admin/upload/${row.id}/results`} style={{ color: "#1976d2", textDecoration: "underline", cursor: "pointer" }}>
                             {row.originalName}
                           </Link>
                         </TableCell>

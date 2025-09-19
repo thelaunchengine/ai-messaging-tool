@@ -1,5 +1,5 @@
 // project-imports
-import StickyActionBarPage from 'views/forms-tables/forms/layout/StickyActionBar';
+import StickyActionBarPage from 'sections/forms/layout/StickyActionBar';
 
 // ==============================|| LAYOUTS - STICKY ACTION BAR ||============================== //
 

@@ -1,5 +1,5 @@
 // project-imports
-import FormsWizardPage from 'views/forms-tables/forms/FormsWizard';
+import FormsWizardPage from 'sections/forms/FormsWizard';
 
 // ==============================|| FORMS WIZARD ||============================== //
 
