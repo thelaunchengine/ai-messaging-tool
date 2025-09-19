@@ -39,9 +39,14 @@ class DatabaseManager:
         """Establish database connection"""
         try:
             # Temporarily hardcode to ensure we use production database
-            production_url = 'postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
-            logger.info(f"Connecting with hardcoded URL: {production_url}")
-            self.conn = pg8000.connect(production_url)
+            logger.info("Connecting with hardcoded production database parameters")
+            self.conn = pg8000.connect(
+                host='production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com',
+                port=5432,
+                user='postgres',
+                password='AiMessaging2024!',
+                database='ai_messaging'
+            )
             self.cursor = self.conn.cursor()
         except Exception as e:
             logger.error(f"Error connecting to database: {e}")
@@ -58,9 +63,14 @@ class DatabaseManager:
         """Get database connection"""
         try:
             # Temporarily hardcode to ensure we use production database
-            production_url = 'postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
-            logger.info(f"Getting connection with hardcoded URL: {production_url}")
-            conn = pg8000.connect(production_url)
+            logger.info("Getting connection with hardcoded production database parameters")
+            conn = pg8000.connect(
+                host='production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com',
+                port=5432,
+                user='postgres',
+                password='AiMessaging2024!',
+                database='ai_messaging'
+            )
             return conn
         except Exception as e:
             logger.error(f"Error connecting to database: {e}")
