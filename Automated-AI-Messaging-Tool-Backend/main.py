@@ -31,6 +31,17 @@ async def health_check():
     """Health check endpoint for load balancer"""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
+@app.get("/api/debug/env")
+async def debug_env():
+    """Debug endpoint to check environment variables"""
+    return {
+        "DATABASE_URL": os.getenv('DATABASE_URL', 'NOT_SET'),
+        "REDIS_URL": os.getenv('REDIS_URL', 'NOT_SET'),
+        "S3_BUCKET_NAME": os.getenv('S3_BUCKET_NAME', 'NOT_SET'),
+        "AWS_REGION": os.getenv('AWS_REGION', 'NOT_SET'),
+        "PORT": os.getenv('PORT', 'NOT_SET')
+    }
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
