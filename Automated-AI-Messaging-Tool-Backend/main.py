@@ -8,10 +8,10 @@ import os
 from datetime import datetime
 from enum import Enum
 import uuid
-# Import Celery tasks
-from celery_tasks.scraping_tasks import scrape_websites_task, generate_messages_task
-from celery_tasks.file_tasks import process_file_upload_task, process_chunk_task, extract_websites_from_file_task
-from celery_tasks.form_submission_tasks import contact_form_submission_task
+# Import Celery tasks (lazy imports to avoid startup issues)
+# from celery_tasks.scraping_tasks import scrape_websites_task, generate_messages_task
+# from celery_tasks.file_tasks import process_file_upload_task, process_chunk_task, extract_websites_from_file_task
+# from celery_tasks.form_submission_tasks import contact_form_submission_task
 from database.database_manager import DatabaseManager
 from ai.message_generator import GeminiMessageGenerator, PredefinedMessageIntegration
 from services.s3_service import S3Service
@@ -490,6 +490,9 @@ async def start_scraping(request: ScrapingRequest):
         # Extract website URLs from the request
         websites = [site.get('url', site) if isinstance(site, dict) else site for site in request.websites]
         
+        # Import Celery task lazily
+        from celery_tasks.scraping_tasks import scrape_websites_task
+        
         # Start Celery task with correct parameter order
         task = scrape_websites_task.delay(
             fileUploadId=request.fileUploadId,
@@ -549,6 +552,9 @@ async def trigger_ai_generation_for_file_upload(request: Dict[str, Any]):
                 'userId': website.get('userId')
             })
         
+        # Import Celery task lazily
+        from celery_tasks.scraping_tasks import generate_messages_task
+        
         # Start Celery task for AI message generation
         task = generate_messages_task.delay(
             website_data=website_data,
@@ -574,6 +580,9 @@ async def trigger_ai_generation_for_file_upload(request: Dict[str, Any]):
 async def process_chunk(chunk_id: str, chunk_number: int, start_row: int, end_row: int, file_path: str, fileType: str):
     """Process a single chunk using Celery"""
     try:
+        # Import Celery task lazily
+        from celery_tasks.file_tasks import process_chunk_task
+        
         # Start Celery task
         task = process_chunk_task.delay(
             chunk_id=chunk_id,
@@ -623,7 +632,7 @@ async def submit_contact_forms(request: FormSubmissionRequest):
 async def get_task_status(task_id: str):
     """Get Celery task status with progress tracking"""
     try:
-        # Get task result from Celery
+        # Import Celery app lazily
         from celery_app import celery_app
         result = celery_app.AsyncResult(task_id)
         
