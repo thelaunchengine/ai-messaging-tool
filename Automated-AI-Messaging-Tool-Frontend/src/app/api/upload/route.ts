@@ -26,13 +26,26 @@ export async function POST(request: NextRequest) {
     // Append the blob to FormData with filename
     formData.append('file', blob, body.filename);
     
-    // Forward the request to the backend on port 8001
+    // Forward the request to the backend on port 8001 using the new JSON endpoint
     const backendUrl = process.env.PYTHON_API_URL || 'http://production-ai-messaging-alb-746376383.us-east-1.elb.amazonaws.com:8001';
     const userId = body.userId || 'cmdi7lqnj0000sbp8h98vwlco'; // Default test user if not provided
     
-    const backendResponse = await fetch(`${backendUrl}/api/upload-from-frontend?userId=${userId}`, {
+    // Prepare JSON payload for the new endpoint
+    const jsonPayload = {
+      filename: body.filename,
+      originalName: body.originalName,
+      fileSize: body.fileSize,
+      fileType: body.fileType,
+      content: body.content,
+      userId: userId
+    };
+    
+    const backendResponse = await fetch(`${backendUrl}/api/upload`, {
       method: 'POST',
-      body: formData
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(jsonPayload)
     });
 
     // Get the response from backend
