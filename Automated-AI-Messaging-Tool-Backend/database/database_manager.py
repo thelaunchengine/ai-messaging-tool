@@ -38,7 +38,10 @@ class DatabaseManager:
     def _connect(self):
         """Establish database connection"""
         try:
-            self.conn = pg8000.connect(self.database_url)
+            # Temporarily hardcode to ensure we use production database
+            production_url = 'postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
+            logger.info(f"Connecting with hardcoded URL: {production_url}")
+            self.conn = pg8000.connect(production_url)
             self.cursor = self.conn.cursor()
         except Exception as e:
             logger.error(f"Error connecting to database: {e}")
@@ -54,7 +57,10 @@ class DatabaseManager:
     def get_connection(self):
         """Get database connection"""
         try:
-            conn = pg8000.connect(self.database_url)
+            # Temporarily hardcode to ensure we use production database
+            production_url = 'postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
+            logger.info(f"Getting connection with hardcoded URL: {production_url}")
+            conn = pg8000.connect(production_url)
             return conn
         except Exception as e:
             logger.error(f"Error connecting to database: {e}")
