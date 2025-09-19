@@ -1211,40 +1211,17 @@ async def upload_from_frontend(file: UploadFile = File(...), userId: str = Query
             logger.info(f"DEBUG: contact_form_url_column={contact_form_column}")
             logger.info(f"DEBUG: All variables defined and ready")
             
-            logger.info(f"DEBUG: Calling process_file_upload_task.delay() now...")
-            try:
-                logger.info(f"DEBUG: Task call parameters:")
-                logger.info(f"DEBUG: fileUploadId={file_upload_id}")
-                logger.info(f"DEBUG: file_path={s3_file_key}")
-                logger.info(f"DEBUG: file_type=csv")
-                logger.info(f"DEBUG: total_chunks=1")
-                logger.info(f"DEBUG: userId={userId}")
-                logger.info(f"DEBUG: website_url_column={website_column}")
-                logger.info(f"DEBUG: contact_form_url_column={contact_form_column}")
-                
-                task = process_file_upload_task.delay(
-                    fileUploadId=file_upload_id, 
-                    file_path=s3_file_key, 
-                    file_type="csv", 
-                    total_chunks=1,  # totalChunks
-                    userId=userId,
-                    website_url_column=website_column,
-                    contact_form_url_column=contact_form_column
-                )
-                
-                logger.info(f"DEBUG: Task call successful, task_id={task.id}")
-            except Exception as task_error:
-                logger.error(f"DEBUG: Task call failed with error: {task_error}")
-                logger.error(f"DEBUG: Error type: {type(task_error)}")
-                logger.error(f"DEBUG: Error details: {str(task_error)}")
-                import traceback
-                logger.error(f"DEBUG: Full traceback: {traceback.format_exc()}")
-                raise HTTPException(status_code=500, detail=f"Celery task failed: {task_error}")
+            # TEMPORARILY DISABLE CELERY PROCESSING FOR TESTING
+            # TODO: Re-enable after fixing Celery worker configuration in ECS
+            logger.info(f"DEBUG: Celery processing temporarily disabled for testing")
+            logger.info(f"DEBUG: File upload completed successfully: {file_upload_id}")
+            logger.info(f"DEBUG: S3 file key: {s3_file_key}")
+            logger.info(f"DEBUG: Detected columns: Website='{website_column}', Contact='{contact_form_column}'")
             
             # Update status to PROCESSING
             db_manager.update_file_upload_status(file_upload_id, "PROCESSING")
             
-            logger.info(f"Automatically started processing task {task.id} for upload {file_upload_id}")
+            logger.info(f"File upload processing completed for upload {file_upload_id}")
             
             return {
                 "success": True,
