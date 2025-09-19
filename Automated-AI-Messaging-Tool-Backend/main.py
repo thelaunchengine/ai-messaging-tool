@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI Messaging Backend with Celery", version="1.0.0")
 
-# Initialize S3 service
-s3_service = S3Service()
+# Initialize S3 service (lazy initialization to avoid startup issues)
+# s3_service = S3Service()
 
 # Health check endpoint
 @app.get("/api/health")
@@ -1135,6 +1135,9 @@ async def upload_from_frontend(file: UploadFile = File(...), userId: str = Query
             
             # Read file content
             content = await file.read()
+            
+            # Initialize S3 service lazily
+            s3_service = S3Service()
             
             # Upload file to S3
             s3_file_key = f"uploads/{file_upload_id}_{file.filename}"
