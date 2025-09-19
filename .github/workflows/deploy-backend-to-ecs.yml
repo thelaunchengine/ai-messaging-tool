@@ -5,6 +5,7 @@ on:
     branches: [ main ]
     paths:
       - 'Automated-AI-Messaging-Tool-Backend/**'
+      - 'cloudformation/task-definitions/backend-task-definition.json'
   workflow_dispatch:
 
 env:
