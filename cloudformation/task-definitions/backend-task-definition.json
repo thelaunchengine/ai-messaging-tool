@@ -29,7 +29,7 @@
         },
         {
           "name": "DATABASE_URL",
-          "value": "postgresql://postgres:AiMessaging2024@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging"
+          "value": "postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging"
         },
         {
           "name": "S3_BUCKET_NAME",
