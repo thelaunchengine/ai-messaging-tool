@@ -2,8 +2,8 @@
   "family": "production-ai-messaging-backend",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
-  "cpu": "512",
-  "memory": "1024",
+  "cpu": "1024",
+  "memory": "2048",
   "executionRoleArn": "arn:aws:iam::957440525184:role/ecsTaskExecutionRole",
   "taskRoleArn": "arn:aws:iam::957440525184:role/ecsTaskRole",
   "containerDefinitions": [
@@ -42,14 +42,34 @@
         {
           "name": "REDIS_URL",
           "value": "redis://production-ai-messaging-redis.gmhyra.ng.0001.use1.cache.amazonaws.com:6379/0"
+        },
+        {
+          "name": "TIMEOUT_PER_WEBSITE",
+          "value": "300"
+        },
+        {
+          "name": "TIMEOUT_PER_BATCH",
+          "value": "900"
+        },
+        {
+          "name": "TIMEOUT_PER_CHUNK",
+          "value": "600"
+        },
+        {
+          "name": "QUEUE_TIMEOUT",
+          "value": "300"
+        },
+        {
+          "name": "DB_POOL_TIMEOUT",
+          "value": "30"
         }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
-          "awslogs-group": "/ecs/production-ai-messaging-backend",
+          "awslogs-group": "/aws/ecs/production-ai-messaging-backend",
           "awslogs-region": "us-east-1",
-          "awslogs-stream-prefix": "ecs"
+          "awslogs-stream-prefix": "backend"
         }
       },
       "healthCheck": {
