@@ -12,6 +12,7 @@ import json
 from database.database_manager import DatabaseManager
 import pandas as pd
 from urllib.parse import urlparse
+from services.s3_service import S3Service
 
 logger = logging.getLogger(__name__)
 
@@ -39,14 +40,27 @@ def validate_website_url(url: str) -> bool:
         return False
 
 def parse_csv_file(file_path: str, website_url_column: str = "websiteUrl", contact_form_url_column: str = "contactFormUrl") -> List[Dict]:
-    """Parse CSV file with flexible column detection and mapping"""
+    """Parse CSV file with flexible column detection and mapping - supports both local files and S3 keys"""
     websites = []
     
     try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            reader = csv.DictReader(file)
+        # Check if file_path is an S3 key (starts with 'uploads/')
+        if file_path.startswith('uploads/'):
+            # Download file from S3
+            s3_service = S3Service()
+            file_content = s3_service.download_file(file_path)
+            if not file_content:
+                raise Exception(f"Failed to download file from S3: {file_path}")
             
-            for row in reader:
+            # Parse CSV from memory
+            content_str = file_content.decode('utf-8')
+            reader = csv.DictReader(content_str.splitlines())
+        else:
+            # Local file
+            with open(file_path, 'r', encoding='utf-8') as file:
+                reader = csv.DictReader(file)
+            
+        for row in reader:
                 # Use provided column mapping with fallback to flexible detection
                 website_url = (
                     row.get(website_url_column) or
@@ -55,7 +69,11 @@ def parse_csv_file(file_path: str, website_url_column: str = "websiteUrl", conta
                     row.get('website url') or
                     row.get('Website') or
                     row.get('URL') or
-                    row.get('url')
+                    row.get('url') or
+                    row.get('site') or
+                    row.get('Site') or
+                    row.get('domain') or
+                    row.get('Domain')
                 )
                 
                 contact_form_url = (
@@ -66,7 +84,15 @@ def parse_csv_file(file_path: str, website_url_column: str = "websiteUrl", conta
                     row.get('website url contact') or
                     row.get('Contact Form') or
                     row.get('Contact') or
-                    row.get('contact')
+                    row.get('contact') or
+                    row.get('form') or
+                    row.get('Form') or
+                    row.get('contact_url') or
+                    row.get('contact url') or
+                    row.get('form_url') or
+                    row.get('form url') or
+                    row.get('email') or
+                    row.get('Email')
                 )
                 
                 if website_url and validate_website_url(website_url):
@@ -170,7 +196,7 @@ def process_file_upload_task(self, fileUploadId: str, file_path: str, file_type:
         })
         
         # Process file in chunks
-        processed_chunks = []
+        processed_chunk_ids = []
         total_records = 0
         
         for chunk in range(total_chunks):
@@ -185,10 +211,11 @@ def process_file_upload_task(self, fileUploadId: str, file_path: str, file_type:
                     file_type=file_type
                 )
                 
-                processed_chunks.append(chunk_result)
+                # Store only the task ID, not the AsyncResult object
+                processed_chunk_ids.append(chunk_result.id)
                 total_records += 100
                 
-                logger.info(f"Processed chunk {chunk + 1}/{total_chunks}")
+                logger.info(f"Processed chunk {chunk + 1}/{total_chunks} with task ID: {chunk_result.id}")
                 
             except Exception as chunk_error:
                 logger.error(f"Error processing chunk {chunk}: {chunk_error}")
@@ -199,7 +226,7 @@ def process_file_upload_task(self, fileUploadId: str, file_path: str, file_type:
         db.update_file_upload(fileUploadId, {
             'status': 'PENDING',  # Will be updated by website extraction
             'processingCompletedAt': datetime.now().isoformat(),
-            'completedChunks': len(processed_chunks)
+            'completedChunks': len(processed_chunk_ids)
             # totalWebsites and processedWebsites will be set by website extraction task
         })
 
@@ -208,6 +235,40 @@ def process_file_upload_task(self, fileUploadId: str, file_path: str, file_type:
         if existing_websites:
             logger.info(f"🔍 [DEBUG] Websites already exist for fileUploadId: {fileUploadId}, skipping duplicate extraction")
             logger.info(f"🔍 [DEBUG] Found {len(existing_websites)} existing websites")
+            
+            # Since websites already exist, trigger scraping and AI generation directly
+            try:
+                from celery_tasks.scraping_tasks import scrape_websites_task
+                
+                # Get website URLs for scraping
+                website_urls = [website['websiteUrl'] for website in existing_websites]
+                
+                # Create scraping job
+                scraping_job_data = {
+                    'fileUploadId': fileUploadId,
+                    'totalWebsites': len(existing_websites),
+                    'status': 'PENDING',
+                    'processedWebsites': 0,
+                    'failedWebsites': 0
+                }
+                success = db.create_scraping_job_from_data(scraping_job_data)
+                
+                if success:
+                    logger.info(f"Created scraping job for file upload {fileUploadId} with {len(existing_websites)} websites")
+                    
+                    # Start scraping task automatically
+                    scraping_task = scrape_websites_task.delay(
+                        fileUploadId=fileUploadId,
+                        userId=userId,
+                        websites=website_urls
+                    )
+                    
+                    logger.info(f"Automatically triggered scraping task {scraping_task.id} for {len(website_urls)} websites")
+                else:
+                    logger.error(f"Failed to create scraping job for file upload {fileUploadId}")
+                    
+            except Exception as e:
+                logger.error(f"Error triggering scraping for existing websites: {e}")
         else:
             # Only trigger website extraction if no websites exist yet
             logger.info(f"🔍 [DEBUG] About to trigger website extraction for fileUploadId: {fileUploadId}")
@@ -221,6 +282,9 @@ def process_file_upload_task(self, fileUploadId: str, file_path: str, file_type:
             )
             
             logger.info(f"🔍 [DEBUG] Website extraction task triggered with task_id: {task.id}")
+            
+            # Don't include the AsyncResult object in the return value
+            # Just log the task ID and continue
 
         # Task completed successfully
         final_result = {
@@ -228,9 +292,9 @@ def process_file_upload_task(self, fileUploadId: str, file_path: str, file_type:
             'file_path': file_path,
             'file_type': file_type,
             'total_chunks': total_chunks,
-            'chunks_processed': len(processed_chunks),
+            'chunks_processed': len(processed_chunk_ids),
             'total_records': total_records,
-            'processed_chunks': processed_chunks,
+            'processed_chunk_ids': processed_chunk_ids,  # Store task IDs instead of AsyncResult objects
             'user_id': userId,
             'completed_at': datetime.now().isoformat()
         }

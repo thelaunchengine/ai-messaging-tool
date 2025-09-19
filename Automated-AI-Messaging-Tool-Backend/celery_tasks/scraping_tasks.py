@@ -27,9 +27,6 @@ from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
-# Import the generate_messages_task to fix the scope issue
-# This will be imported when needed to avoid circular imports
-
 # Configuration for testing limits
 # TESTING_MODE_ENABLED: Set to 'true' to enable testing mode with limited AI message generation
 # MAX_AI_MESSAGES_PER_FILE: Maximum number of AI messages to generate per CSV file (default: 2)
@@ -1034,20 +1031,11 @@ def scrape_with_selenium_fallback(url: str) -> Dict[str, Any]:
     try:
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
-        import tempfile
-        import uuid
-        import time
         
         options = Options()
         options.add_argument('--headless')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
-        
-        # Create unique profile directory to avoid conflicts between workers
-        unique_id = str(uuid.uuid4())[:8]
-        timestamp = str(int(time.time() * 1000))
-        profile_dir = tempfile.mkdtemp(prefix=f'chrome_scraping_{unique_id}_{timestamp}_')
-        options.add_argument(f'--user-data-dir={profile_dir}')
         
         driver = webdriver.Chrome(options=options)
         driver.set_page_load_timeout(30)
@@ -1060,13 +1048,6 @@ def scrape_with_selenium_fallback(url: str) -> Dict[str, Any]:
         content = driver.page_source
         driver.quit()
         
-        # Clean up profile directory
-        try:
-            import shutil
-            shutil.rmtree(profile_dir, ignore_errors=True)
-        except:
-            pass
-        
         return {
             'success': True,
             'content': content,
@@ -1075,18 +1056,11 @@ def scrape_with_selenium_fallback(url: str) -> Dict[str, Any]:
         }
         
     except Exception as e:
-        # Clean up profile directory on error
-        try:
-            import shutil
-            shutil.rmtree(profile_dir, ignore_errors=True)
-        except:
-            pass
-        
         return {
             'success': False,
             'error': f"Selenium fallback failed: {str(e)}",
             'url': url
-        }
+    }
 
 def scrape_website_data(url: str) -> Dict[str, Any]:
     """
@@ -1455,7 +1429,6 @@ def scrape_websites_task(self, fileUploadId: str, userId: str, websites: List[st
                         
                         if website_record:
                             # Start AI message generation task for this individual website
-                            from celery_tasks.scraping_tasks import generate_messages_task
                             message_task = generate_messages_task.delay(
                                 website_data=[website_record],  # Single website
                                 message_type="general",
@@ -1539,6 +1512,7 @@ def scrape_websites_task(self, fileUploadId: str, userId: str, websites: List[st
                 if successful_websites:
                     # Trigger AI message generation automatically
                     from celery_tasks.scraping_tasks import generate_messages_task
+                    
                     ai_task = generate_messages_task.delay(
                         website_data=successful_websites,
                         message_type="general",
@@ -1682,7 +1656,6 @@ async def scrape_websites_async(fileUploadId: str, userId: str, websites: List[s
                         
                         if website_record:
                             # Start AI message generation task for this individual website
-                            from celery_tasks.scraping_tasks import generate_messages_task
                             message_task = generate_messages_task.delay(
                                 website_data=[website_record],  # Single website
                                 message_type="general",
