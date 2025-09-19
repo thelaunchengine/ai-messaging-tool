@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     chromium-driver \
     wget \
     gnupg \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables for Chrome

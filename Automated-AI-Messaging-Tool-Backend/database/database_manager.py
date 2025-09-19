@@ -42,7 +42,7 @@ class DatabaseManager:
             import ssl
             from urllib.parse import urlparse
             
-            database_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
+            database_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
             parsed_url = urlparse(database_url)
             
             # URL decode the password in case it's encoded
@@ -82,7 +82,7 @@ class DatabaseManager:
             import ssl
             from urllib.parse import urlparse
             
-            database_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
+            database_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
             parsed_url = urlparse(database_url)
             
             # URL decode the password in case it's encoded
