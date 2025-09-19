@@ -45,7 +45,11 @@ class DatabaseManager:
             database_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
             parsed_url = urlparse(database_url)
             
-            logger.info(f"Connecting with parsed database URL: {parsed_url.hostname}:{parsed_url.port}")
+            # URL decode the password in case it's encoded
+            import urllib.parse
+            password = urllib.parse.unquote(parsed_url.password) if parsed_url.password else parsed_url.password
+            
+            logger.info(f"Connecting with parsed database URL: {parsed_url.hostname}:{parsed_url.port}, user: {parsed_url.username}")
             
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
@@ -55,7 +59,7 @@ class DatabaseManager:
                 host=parsed_url.hostname,
                 port=parsed_url.port,
                 user=parsed_url.username,
-                password=parsed_url.password,
+                password=password,
                 database=parsed_url.path[1:],  # Remove leading slash
                 ssl_context=ssl_context
             )
@@ -81,7 +85,11 @@ class DatabaseManager:
             database_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
             parsed_url = urlparse(database_url)
             
-            logger.info(f"Getting connection with parsed database URL: {parsed_url.hostname}:{parsed_url.port}")
+            # URL decode the password in case it's encoded
+            import urllib.parse
+            password = urllib.parse.unquote(parsed_url.password) if parsed_url.password else parsed_url.password
+            
+            logger.info(f"Getting connection with parsed database URL: {parsed_url.hostname}:{parsed_url.port}, user: {parsed_url.username}")
             
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
@@ -91,7 +99,7 @@ class DatabaseManager:
                 host=parsed_url.hostname,
                 port=parsed_url.port,
                 user=parsed_url.username,
-                password=parsed_url.password,
+                password=password,
                 database=parsed_url.path[1:],  # Remove leading slash
                 ssl_context=ssl_context
             )
