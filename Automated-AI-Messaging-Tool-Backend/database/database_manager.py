@@ -45,7 +45,8 @@ class DatabaseManager:
                 port=5432,
                 user='postgres',
                 password='AiMessaging2024!',
-                database='ai_messaging'
+                database='ai_messaging',
+                ssl_context=True
             )
             self.cursor = self.conn.cursor()
         except Exception as e:
@@ -69,7 +70,8 @@ class DatabaseManager:
                 port=5432,
                 user='postgres',
                 password='AiMessaging2024!',
-                database='ai_messaging'
+                database='ai_messaging',
+                ssl_context=True
             )
             return conn
         except Exception as e:
