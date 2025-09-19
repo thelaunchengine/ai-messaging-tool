@@ -1254,11 +1254,11 @@ async def upload_from_frontend(file: UploadFile = File(...), userId: str = Query
             return {
                 "success": True,
                 "fileUploadId": file_upload_id,
-                "filePath": backend_file_path,
+                "filePath": s3_url,
                 "originalName": file.filename,
                 "fileSize": len(content),
                 "status": "UPLOADED_BUT_PROCESSING_FAILED",
-                "message": f"File uploaded to backend but automatic processing failed. Manual processing required.",
+                "message": f"File uploaded to S3 but automatic processing failed. Manual processing required.",
                 "error": str(processing_error)
             }
         
