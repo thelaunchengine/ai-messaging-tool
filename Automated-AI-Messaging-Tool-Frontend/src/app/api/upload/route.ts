@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
 const prisma = new PrismaClient({
   datasources: {
     db: {
-      url: 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
+      url: process.env.DATABASE_URL || 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
     }
   }
 });

@@ -9,7 +9,7 @@
   "containerDefinitions": [
     {
       "name": "backend",
-      "image": "957440525184.dkr.ecr.us-east-1.amazonaws.com/production-ai-messaging-backend:latest",
+            "image": "957440525184.dkr.ecr.us-east-1.amazonaws.com/production-ai-messaging-backend:v2.0.3",
       "portMappings": [
         {
           "containerPort": 8001,
