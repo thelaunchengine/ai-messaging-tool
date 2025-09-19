@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class DatabaseManager:
     def __init__(self):
         # Updated to use production database as fallback instead of localhost
-        self.database_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
+        self.database_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
         logger.info(f"DatabaseManager initialized with URL: {self.database_url}")
         logger.info(f"Environment DATABASE_URL: {os.getenv('DATABASE_URL', 'NOT_SET')}")
         

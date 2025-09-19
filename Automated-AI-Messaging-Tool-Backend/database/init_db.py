@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 def init_database():
     """Initialize the database with all required tables"""
-    db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
+    db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
     
     try:
         conn = psycopg2.connect(db_url)

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self):
-        self.db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
+        self.db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
         logger.info(f"DatabaseManager initialized with URL: {self.db_url.split('@')[1] if '@' in self.db_url else 'default'}")
     
     def _parse_db_url(self, db_url: str) -> Dict:
