@@ -809,10 +809,16 @@ class DatabaseManager:
                 fileSize, fileType, status, totalWebsites, processedWebsites, failedWebsites, totalChunks, completedChunks
             )
             logger.info(f"Attempting to insert file_upload: {values}")
+            # First check if the record already exists
+            cursor.execute("SELECT id FROM file_uploads WHERE id = %s", (fileUploadId,))
+            if cursor.fetchone():
+                logger.info(f"File upload record already exists: {fileUploadId}")
+                conn.commit()
+                return True
+            
             cursor.execute("""
                 INSERT INTO file_uploads (id, "userId", filename, "originalName", "fileSize", "fileType", status, "totalWebsites", "processedWebsites", "failedWebsites", "totalChunks", "completedChunks", "updatedAt")
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (id) DO NOTHING
             """, values)
             
             conn.commit()
