@@ -54,6 +54,11 @@ DATABASE_ANALYSIS_REPORT.md
 *.tmp
 *.temp
 
+# Archive files
+*.tar.gz
+*.zip
+*.rar
+
 # Documentation
 README.md
 DEPLOYMENT.md 
