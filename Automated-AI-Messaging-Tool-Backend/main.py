@@ -45,7 +45,7 @@ async def debug_env():
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://103.215.159.51:3001", "http://localhost:3001", "http://34.195.237.115:3001"],
+    allow_origins=["*"],  # Allow all origins for now
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
