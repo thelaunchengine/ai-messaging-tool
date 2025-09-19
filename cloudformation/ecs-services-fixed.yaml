@@ -55,13 +55,13 @@ Parameters:
 
   BackendCpu:
     Type: String
-    Default: '512'
+    Default: '1024'
     AllowedValues: ['256', '512', '1024', '2048', '4096']
     Description: 'Backend CPU units'
 
   BackendMemory:
     Type: String
-    Default: '1024'
+    Default: '2048'
     AllowedValues: ['512', '1024', '2048', '4096', '8192']
     Description: 'Backend memory in MB'
 
@@ -79,13 +79,13 @@ Parameters:
 
   WorkerCpu:
     Type: String
-    Default: '1024'
+    Default: '2048'
     AllowedValues: ['256', '512', '1024', '2048', '4096']
     Description: 'Worker CPU units'
 
   WorkerMemory:
     Type: String
-    Default: '2048'
+    Default: '4096'
     AllowedValues: ['512', '1024', '2048', '4096', '8192']
     Description: 'Worker memory in MB'
 
@@ -145,13 +145,13 @@ Resources:
         - Name: backend
           Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Environment}-ai-messaging-backend:${BackendImageTag}'
           PortMappings:
-            - ContainerPort: 8000
+            - ContainerPort: 8001
               Protocol: tcp
           Environment:
             - Name: NODE_ENV
               Value: !Ref Environment
             - Name: PORT
-              Value: '8000'
+              Value: '8001'
             - Name: DB_HOST
               Value: !ImportValue
                 Fn::Sub: '${Environment}-ai-messaging-db-endpoint'
@@ -204,6 +204,16 @@ Resources:
               Value: 'Your Company'
             - Name: HOST
               Value: '0.0.0.0'
+            - Name: TIMEOUT_PER_WEBSITE
+              Value: '300'
+            - Name: TIMEOUT_PER_BATCH
+              Value: '900'
+            - Name: TIMEOUT_PER_CHUNK
+              Value: '600'
+            - Name: QUEUE_TIMEOUT
+              Value: '300'
+            - Name: DB_POOL_TIMEOUT
+              Value: '30'
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -213,11 +223,11 @@ Resources:
           HealthCheck:
             Command:
               - CMD-SHELL
-              - curl -f http://localhost:8000/health || exit 1
+              - curl -f http://localhost:8001/api/health || exit 1
             Interval: 30
-            Timeout: 5
-            Retries: 3
-            StartPeriod: 60
+            Timeout: 10
+            Retries: 5
+            StartPeriod: 120
 
   FrontendTaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -353,7 +363,7 @@ Resources:
           AssignPublicIp: DISABLED
       LoadBalancers:
         - ContainerName: backend
-          ContainerPort: 8000
+          ContainerPort: 8001
           TargetGroupArn: !ImportValue
             Fn::Sub: '${Environment}-backend-tg-arn'
       Tags:

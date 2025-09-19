@@ -20,7 +20,11 @@ from services.s3_service import S3Service
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="AI Messaging Backend with Celery", version="1.0.0")
+app = FastAPI(
+    title="AI Messaging Backend with Celery", 
+    version="1.0.0",
+    timeout=300  # 5 minutes default timeout
+)
 
 # Initialize S3 service (lazy initialization to avoid startup issues)
 # s3_service = S3Service()
@@ -1044,6 +1048,23 @@ async def bulk_generate_messages(request: Dict[str, Any]):
 @app.post("/api/ai/generate-preview")
 async def generate_ai_message_preview(website_data: List[Dict[str, Any]]):
     """Generate AI message preview for UI display - no database storage"""
+    import asyncio
+    try:
+        # Set timeout for AI generation (2 minutes per website, max 10 minutes total)
+        max_timeout = min(600, len(website_data) * 120)  # 2 minutes per website, max 10 minutes
+        return await asyncio.wait_for(
+            _generate_ai_preview_internal(website_data),
+            timeout=max_timeout
+        )
+    except asyncio.TimeoutError:
+        logger.error(f"AI generation preview timeout for {len(website_data)} websites")
+        raise HTTPException(status_code=408, detail="AI generation timed out. Please try with fewer websites.")
+    except Exception as e:
+        logger.error(f"Error in generate_ai_message_preview: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def _generate_ai_preview_internal(website_data: List[Dict[str, Any]]):
+    """Internal AI preview generation function"""
     try:
         if not website_data:
             raise HTTPException(status_code=400, detail="Website data is required")
@@ -1115,6 +1136,22 @@ async def generate_ai_message_preview(website_data: List[Dict[str, Any]]):
 @app.post("/api/upload-from-frontend")
 async def upload_from_frontend(file: UploadFile = File(...), userId: str = Query(...)):
     """Upload a CSV file from frontend, copy to backend directory, and start processing"""
+    import asyncio
+    try:
+        # Set timeout for the entire operation (5 minutes)
+        return await asyncio.wait_for(
+            _upload_file_internal(file, userId),
+            timeout=300.0
+        )
+    except asyncio.TimeoutError:
+        logger.error(f"File upload timeout for user {userId}")
+        raise HTTPException(status_code=408, detail="Upload operation timed out. Please try again with a smaller file.")
+    except Exception as e:
+        logger.error(f"Error in upload_from_frontend: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def _upload_file_internal(file: UploadFile, userId: str):
+    """Internal file upload function with timeout handling"""
     try:
         if not file.filename.endswith('.csv'):
             raise HTTPException(status_code=400, detail="Only CSV files are supported")
@@ -1376,4 +1413,12 @@ async def download_file(filename: str):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv('PORT', 8001))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=port,
+        timeout_keep_alive=300,  # 5 minutes
+        timeout_graceful_shutdown=30,  # 30 seconds
+        limit_max_requests=1000,  # Restart worker after 1000 requests
+        limit_concurrency=100  # Max concurrent connections
+    )
