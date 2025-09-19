@@ -90,3 +90,4 @@ out/
 # Backup files
 *backup*
 *backup-*
+lambda-package/
