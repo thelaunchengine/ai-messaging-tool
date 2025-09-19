@@ -17,7 +17,7 @@ load_dotenv()
 
 class ProcessingMonitor:
     def __init__(self):
-        self.db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:cDtrtoOqpdkAzMcLSd%401847@localhost:5432/aimsgdb')
+        self.db_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
     
     def get_connection(self):
         return psycopg2.connect(self.db_url)
