@@ -38,19 +38,25 @@ class DatabaseManager:
     def _connect(self):
         """Establish database connection"""
         try:
-            # Temporarily hardcode to ensure we use production database
-            logger.info("Connecting with hardcoded production database parameters")
+            # Parse database URL to get connection parameters
             import ssl
+            from urllib.parse import urlparse
+            
+            database_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
+            parsed_url = urlparse(database_url)
+            
+            logger.info(f"Connecting with parsed database URL: {parsed_url.hostname}:{parsed_url.port}")
+            
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
             
             self.conn = pg8000.connect(
-                host='production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com',
-                port=5432,
-                user='postgres',
-                password='AiMessaging2024!',
-                database='ai_messaging',
+                host=parsed_url.hostname,
+                port=parsed_url.port,
+                user=parsed_url.username,
+                password=parsed_url.password,
+                database=parsed_url.path[1:],  # Remove leading slash
                 ssl_context=ssl_context
             )
             self.cursor = self.conn.cursor()
@@ -68,19 +74,25 @@ class DatabaseManager:
     def get_connection(self):
         """Get database connection"""
         try:
-            # Temporarily hardcode to ensure we use production database
-            logger.info("Getting connection with hardcoded production database parameters")
+            # Parse database URL to get connection parameters
             import ssl
+            from urllib.parse import urlparse
+            
+            database_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024!@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
+            parsed_url = urlparse(database_url)
+            
+            logger.info(f"Getting connection with parsed database URL: {parsed_url.hostname}:{parsed_url.port}")
+            
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
             
             conn = pg8000.connect(
-                host='production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com',
-                port=5432,
-                user='postgres',
-                password='AiMessaging2024!',
-                database='ai_messaging',
+                host=parsed_url.hostname,
+                port=parsed_url.port,
+                user=parsed_url.username,
+                password=parsed_url.password,
+                database=parsed_url.path[1:],  # Remove leading slash
                 ssl_context=ssl_context
             )
             return conn
