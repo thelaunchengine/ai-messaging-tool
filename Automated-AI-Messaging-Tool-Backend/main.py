@@ -1151,6 +1151,62 @@ async def upload_from_frontend(file: UploadFile = File(...), userId: str = Query
         logger.error(f"Error in upload_from_frontend: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/upload")
+async def upload_json(request: dict):
+    """Upload a CSV file from frontend using JSON format"""
+    import asyncio
+    import base64
+    from io import BytesIO
+    
+    try:
+        # Extract data from JSON request
+        filename = request.get('filename', '')
+        original_name = request.get('originalName', filename)
+        file_size = request.get('fileSize', 0)
+        file_type = request.get('fileType', 'csv')
+        content_b64 = request.get('content', '')
+        user_id = request.get('userId', 'default-user')  # Default user ID if not provided
+        
+        # Validate required fields
+        if not filename or not content_b64:
+            raise HTTPException(status_code=400, detail="Missing required fields: filename and content")
+        
+        if not filename.endswith('.csv'):
+            raise HTTPException(status_code=400, detail="Only CSV files are supported")
+        
+        # Decode base64 content
+        try:
+            content = base64.b64decode(content_b64)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid base64 content: {str(e)}")
+        
+        # Create a mock UploadFile object from the content
+        from fastapi import UploadFile
+        from io import BytesIO
+        
+        file_obj = BytesIO(content)
+        upload_file = UploadFile(
+            file=file_obj,
+            filename=filename,
+            size=len(content)
+        )
+        
+        # Set timeout for the entire operation (5 minutes)
+        return await asyncio.wait_for(
+            _upload_file_internal(upload_file, user_id),
+            timeout=300.0
+        )
+        
+    except asyncio.TimeoutError:
+        logger.error(f"File upload timeout for user {user_id}")
+        raise HTTPException(status_code=408, detail="Upload operation timed out. Please try again with a smaller file.")
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        logger.error(f"Error in upload_json: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 async def _upload_file_internal(file: UploadFile, userId: str):
     """Internal file upload function with timeout handling"""
     try:
