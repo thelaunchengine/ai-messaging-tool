@@ -11,12 +11,15 @@ from database.database_manager import DatabaseManager
 import os
 import random
 import json
+import requests
+from bs4 import BeautifulSoup
 
 # Import AI-powered form detection
 from hybrid_form_detector import HybridFormDetector, DetectionResult
 from ai_form_analyzer import AIFormAnalyzer
 from celery_tasks.simple_form_submission import SimpleFormSubmitter
 from ai_services.intelligent_form_submitter import IntelligentFormSubmitter
+from celery_tasks.form_detection_utils import detect_wordpress_cf7_form, handle_wordpress_cf7_form, is_contact_form
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +179,140 @@ class ContactFormSubmitter:
             'message_subject': os.getenv('MESSAGE_SUBJECT', 'Business Inquiry'),
             'company_name': os.getenv('COMPANY_NAME', 'Your Company')
         }
+    
+    def handle_specialized_form_types(self, form_url: str, website_data: Dict[str, Any], generated_message: str) -> Dict[str, Any]:
+        """Handle specialized form types like WordPress CF7, anti-bot protected forms, etc."""
+        try:
+            # First, try to get the page content
+            response = requests.get(form_url, timeout=30)
+            if response.status_code != 200:
+                return {'success': False, 'error': f'Failed to access form URL: HTTP {response.status_code}'}
+            
+            soup = BeautifulSoup(response.text, 'html.parser')
+            forms = soup.find_all('form')
+            
+            if not forms:
+                return {'success': False, 'error': 'No forms found on the page'}
+            
+            # Find the best contact form
+            contact_forms = [form for form in forms if is_contact_form(form)]
+            
+            if not contact_forms:
+                return {'success': False, 'error': 'No valid contact forms found'}
+            
+            # Select the best form
+            best_form = contact_forms[0]
+            for form in contact_forms:
+                if detect_wordpress_cf7_form(form):
+                    best_form = form
+                    break
+            
+            # Handle WordPress CF7 forms
+            if detect_wordpress_cf7_form(best_form):
+                logger.info(f"🔧 Handling WordPress CF7 form for {form_url}")
+                cf7_result = handle_wordpress_cf7_form(best_form, form_url, website_data.get('websiteUrl', ''))
+                
+                if cf7_result['success']:
+                    # Submit via AJAX
+                    ajax_response = requests.post(
+                        cf7_result['ajax_url'],
+                        data=cf7_result['form_data'],
+                        headers={
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Referer': form_url
+                        },
+                        timeout=30
+                    )
+                    
+                    if ajax_response.status_code == 200:
+                        response_data = ajax_response.json()
+                        if response_data.get('status') == 'mail_sent':
+                            return {
+                                'success': True,
+                                'method_used': 'wordpress_cf7_ajax',
+                                'response_content': ajax_response.text,
+                                'fields_submitted': cf7_result['form_data']
+                            }
+                        else:
+                            return {
+                                'success': False,
+                                'error': f"CF7 submission failed: {response_data.get('message', 'Unknown error')}",
+                                'fields_submitted': cf7_result['form_data']
+                            }
+                    else:
+                        return {
+                            'success': False,
+                            'error': f'AJAX submission failed: HTTP {ajax_response.status_code}',
+                            'fields_submitted': cf7_result['form_data']
+                        }
+                else:
+                    return {
+                        'success': False,
+                        'error': cf7_result['error'],
+                        'fields_submitted': {}
+                    }
+            
+            # Handle other form types with traditional submission
+            return self._submit_traditional_form(best_form, form_url, generated_message)
+            
+        except Exception as e:
+            logger.error(f"Error in specialized form handling: {str(e)}")
+            return {'success': False, 'error': f'Specialized form handling error: {str(e)}'}
+    
+    def _submit_traditional_form(self, form, form_url: str, generated_message: str) -> Dict[str, Any]:
+        """Submit traditional HTML forms"""
+        try:
+            # Extract form data
+            form_data = {}
+            inputs = form.find_all(['input', 'textarea', 'select'])
+            
+            for inp in inputs:
+                name = inp.get('name')
+                if name:
+                    value = inp.get('value', '')
+                    if inp.name == 'textarea':
+                        value = inp.get_text()
+                    elif inp.get('type') == 'checkbox':
+                        value = '1' if inp.get('checked') else '0'
+                    elif inp.get('type') == 'radio':
+                        if inp.get('checked'):
+                            form_data[name] = value
+                    else:
+                        form_data[name] = value
+            
+            # Fill in contact-specific fields
+            for name, value in form_data.items():
+                name_lower = name.lower()
+                if 'name' in name_lower and not value:
+                    form_data[name] = self.user_config['sender_name']
+                elif 'email' in name_lower and not value:
+                    form_data[name] = self.user_config['sender_email']
+                elif 'phone' in name_lower and not value:
+                    form_data[name] = self.user_config['sender_phone']
+                elif 'message' in name_lower and not value:
+                    form_data[name] = generated_message
+                elif 'subject' in name_lower and not value:
+                    form_data[name] = self.user_config['message_subject']
+            
+            # Submit the form
+            form_action = form.get('action', form_url)
+            if form_action.startswith('/'):
+                from urllib.parse import urljoin
+                form_action = urljoin(form_url, form_action)
+            
+            response = requests.post(form_action, data=form_data, timeout=30)
+            
+            return {
+                'success': response.status_code == 200,
+                'method_used': 'traditional_post',
+                'response_content': response.text,
+                'fields_submitted': form_data,
+                'status_code': response.status_code
+            }
+            
+        except Exception as e:
+            return {'success': False, 'error': f'Traditional form submission error: {str(e)}'}
     
     def detect_contact_form_fields(self, form_url: str) -> Dict[str, Any]:
         """
@@ -851,22 +988,30 @@ def submit_contact_forms_task(self, websites_with_messages: List[Dict], message_
                 logger.error(f"❌ Failed to update file upload status: {status_error}")
         
         # ULTRA-FAST MODE: Process all websites in parallel batches
-        from celery_tasks.ultra_fast_form_submission import submit_forms_ultra_fast_task
-        
-        # Use ultra-fast parallel processing instead of sequential
         logger.info(f"🚀 Using ULTRA-FAST parallel form submission for {len(websites_with_messages)} websites")
         
-        # Submit to ultra-fast task
-        ultra_fast_task = submit_forms_ultra_fast_task.delay(websites_with_messages, file_upload_id, userId)
-        
-        # Wait for completion and get results
+        # Use direct async processing instead of calling another task to avoid .get() issue
         try:
-            results = ultra_fast_task.get(timeout=300)  # 5 minute timeout
-            successful_submissions = results.get('successful_submissions', 0)
-            failed_submissions = results.get('failed_submissions', 0)
-            submission_results = results.get('results', [])
+            from celery_tasks.ultra_fast_form_submission import UltraFastFormSubmitter
+            submitter = UltraFastFormSubmitter(max_workers=20)
             
-            logger.info(f"🎯 ULTRA-FAST submission completed: {successful_submissions} successful, {failed_submissions} failed")
+            # Run async submission directly
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                results = loop.run_until_complete(
+                    submitter.submit_forms_parallel(websites_with_messages, file_upload_id)
+                )
+                successful_submissions = results.get('successful_submissions', 0)
+                failed_submissions = results.get('failed_submissions', 0)
+                submission_results = results.get('results', [])
+                
+                logger.info(f"🎯 ULTRA-FAST submission completed: {successful_submissions} successful, {failed_submissions} failed")
+                
+            finally:
+                loop.close()
             
         except Exception as e:
             logger.error(f"❌ Ultra-fast submission failed, falling back to sequential: {e}")
@@ -882,19 +1027,27 @@ def submit_contact_forms_task(self, websites_with_messages: List[Dict], message_
                 try:
                     logger.info(f"Processing {website.get('websiteUrl', 'Unknown')} - contact form: {website.get('contactFormUrl')}")
                     
-                    # Use AI-powered intelligent form submission
-                    submission_result = submitter.submit_contact_form_intelligent(
-                        website_data=website,
-                        generated_message=website['generatedMessage']
-                    )
+                    # Try specialized form handling first
+                    if website.get('contactFormUrl'):
+                        submission_result = submitter.handle_specialized_form_types(
+                            form_url=website['contactFormUrl'],
+                            website_data=website,
+                            generated_message=website['generatedMessage']
+                        )
+                    else:
+                        # Fallback to AI-powered intelligent form submission
+                        submission_result = submitter.submit_contact_form_intelligent(
+                            website_data=website,
+                            generated_message=website['generatedMessage']
+                        )
                     
                     # Update database
                     if submission_result.get('success'):
                         db_manager.update_website_submission(
                             website_id=website.get('id'),
                             submission_status="SUBMITTED",
-                            submission_time=submission_result.get('submission_time'),
-                            response_content=submission_result.get('response_page', ''),
+                            submission_time=submission_result.get('submission_time', datetime.now().isoformat()),
+                            response_content=submission_result.get('response_content', ''),
                             submitted_form_fields=json.dumps(submission_result.get('fields_submitted', {}))
                         )
                         successful_submissions += 1
@@ -902,8 +1055,9 @@ def submit_contact_forms_task(self, websites_with_messages: List[Dict], message_
                         db_manager.update_website_submission(
                             website_id=website.get('id'),
                             submission_status="FAILED",
-                            submission_time=submission_result.get('submission_time'),
-                            error_message=submission_result.get('error', 'Unknown error')
+                            submission_time=submission_result.get('submission_time', datetime.now().isoformat()),
+                            error_message=submission_result.get('error', 'Unknown error'),
+                            submitted_form_fields=json.dumps(submission_result.get('fields_submitted', {}))
                         )
                         failed_submissions += 1
                         

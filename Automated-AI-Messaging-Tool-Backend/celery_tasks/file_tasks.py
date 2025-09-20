@@ -43,7 +43,37 @@ def parse_csv_file(file_path: str, website_url_column: str = "websiteUrl", conta
     websites = []
     
     try:
-        with open(file_path, 'r', encoding='utf-8') as file:
+        # Handle S3 URLs by downloading the file first (legacy support)
+        if file_path.startswith('https://') and 's3' in file_path:
+            import tempfile
+            import os
+            from services.s3_service import S3Service
+            
+            logger.info(f"Downloading CSV file from S3: {file_path}")
+            
+            # Extract the S3 key from the URL
+            s3_key = file_path.split('/uploads/')[-1] if '/uploads/' in file_path else file_path.split('/')[-1]
+            
+            # Use S3 service to download the file
+            s3_service = S3Service()
+            file_content = s3_service.download_file(s3_key)
+            
+            if not file_content:
+                raise Exception(f"Failed to download file from S3: {s3_key}")
+            
+            # Create a temporary file
+            with tempfile.NamedTemporaryFile(mode='w+', suffix='.csv', delete=False, encoding='utf-8') as temp_file:
+                temp_file.write(file_content.decode('utf-8'))
+                temp_file_path = temp_file.name
+            
+            # Use the temporary file
+            file_to_read = temp_file_path
+        else:
+            # Use the file path directly for local files
+            logger.info(f"Processing local file: {file_path}")
+            file_to_read = file_path
+        
+        with open(file_to_read, 'r', encoding='utf-8') as file:
             reader = csv.DictReader(file)
             
             for row in reader:
@@ -100,6 +130,14 @@ def parse_csv_file(file_path: str, website_url_column: str = "websiteUrl", conta
     except Exception as e:
         logger.error(f"Error parsing CSV file {file_path}: {str(e)}")
         raise
+    finally:
+        # Clean up temporary file if it was created
+        if file_path.startswith('https://') and 's3' in file_path and 'file_to_read' in locals():
+            try:
+                os.unlink(file_to_read)
+                logger.info(f"Cleaned up temporary file: {file_to_read}")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to clean up temporary file {file_to_read}: {cleanup_error}")
     
     return websites
 

@@ -57,7 +57,7 @@ class RobustWebScraper:
         self.backoff_factor = 2
     
     def _create_robust_session(self):
-        """Create a session with robust error handling"""
+        """Create a session with robust error handling and anti-bot protection bypass"""
         
         session = requests.Session()
         
@@ -74,14 +74,29 @@ class RobustWebScraper:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         
-        # Set headers to avoid detection
+        # Rotate user agents to avoid detection
+        user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:91.0) Gecko/20100101 Firefox/91.0'
+        ]
+        
+        # Set realistic headers to avoid detection
         session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
+            'User-Agent': random.choice(user_agents),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
+            'DNT': '1'
         })
         
         return session
@@ -417,10 +432,30 @@ def handle_parsing_errors(html_content: str, url: str) -> Dict:
         logger.error(f"Parsing error for {url}: {str(e)}")
         return {'success': False, 'error': f'Parsing Error: {str(e)}'}
 
+# Import form detection utilities
+from celery_tasks.form_detection_utils import is_contact_form, detect_wordpress_cf7_form, handle_wordpress_cf7_form
+
 def select_best_contact_form(all_contact_options: List[Dict]) -> Dict:
-    """Select the best contact form from multiple options"""
+    """Select the best contact form from multiple options with improved scoring"""
     if not all_contact_options:
         return None
+    
+    # Enhanced scoring for better form selection
+    for option in all_contact_options:
+        if option['type'] == 'hidden_form':
+            # Additional scoring for hidden forms
+            element_info = option.get('element_info', {})
+            form_action = element_info.get('action', '').lower()
+            form_class = element_info.get('class', '').lower()
+            
+            # Bonus for WordPress CF7 forms
+            if detect_wordpress_cf7_form({'class': form_class.split(), 'action': form_action}):
+                option['score'] += 15
+                option['priority'] = 0  # Highest priority for CF7 forms
+            
+            # Penalty for non-contact forms
+            if any(keyword in option['text'] for keyword in ['search', 'newsletter', 'pincode', 'login']):
+                option['score'] -= 20
     
     # Sort by priority first, then by score
     all_contact_options.sort(key=lambda x: (x['priority'], -x['score']))
@@ -431,7 +466,7 @@ def select_best_contact_form(all_contact_options: List[Dict]) -> Dict:
     # Log all options for debugging
     logger.info(f"Found {len(all_contact_options)} contact options:")
     for i, option in enumerate(all_contact_options[:5]):
-        logger.info(f"  {i+1}. {option['type']}: {option['text'][:50]} (score: {option['score']})")
+        logger.info(f"  {i+1}. {option['type']}: {option['text'][:50]} (score: {option['score']}, priority: {option['priority']})")
     
     return best_contact
 
@@ -782,18 +817,16 @@ def extract_company_info(html: str, base_url: str) -> Dict[str, Any]:
                     }
                 })
     
-    # 5. Look for hidden contact forms in the page
+    # 5. Look for hidden contact forms in the page with improved detection
     hidden_forms = []
     for form in soup.find_all('form'):
-        form_text = form.get_text().lower()
-        form_action = form.get('action', '').lower()
-        form_id = form.get('id', '').lower()
-        form_class = ' '.join(form.get('class', [])).lower()
-        
-        if any(keyword in form_text for keyword in ['contact', 'message', 'reach']) or \
-           any(keyword in form_action for keyword in ['contact', 'message']) or \
-           any(keyword in form_id for keyword in ['contact', 'message']) or \
-           any(keyword in form_class for keyword in ['contact', 'message']):
+        # Use the improved contact form detection
+        if is_contact_form(form):
+            form_text = form.get_text().lower()
+            form_action = form.get('action', '').lower()
+            form_id = form.get('id', '').lower()
+            form_class = ' '.join(form.get('class', [])).lower()
+            
             hidden_forms.append({
                 'type': 'hidden_form',
                 'form': form,
@@ -802,7 +835,7 @@ def extract_company_info(html: str, base_url: str) -> Dict[str, Any]:
                 'class': form_class
             })
             
-            # Score this hidden form
+            # Enhanced scoring for hidden forms
             score = 0
             if 'contact' in form_text: score += 9
             if 'contact' in form_action: score += 8
@@ -810,18 +843,38 @@ def extract_company_info(html: str, base_url: str) -> Dict[str, Any]:
             if 'contact' in form_class: score += 6
             if form_action: score += 5  # Bonus for having an action URL
             
-            # Only add if there's a valid form action URL
-            if form_action and form_action.strip():
+            # Bonus for WordPress CF7 forms
+            if detect_wordpress_cf7_form(form):
+                score += 15
+            
+            # Check for actual input fields (name, email, message)
+            inputs = form.find_all(['input', 'textarea'])
+            for inp in inputs:
+                input_name = inp.get('name', '').lower()
+                input_type = inp.get('type', '').lower()
+                if 'name' in input_name: score += 3
+                if 'email' in input_name or input_type == 'email': score += 3
+                if 'message' in input_name or inp.name == 'textarea': score += 5
+            
+            # Only add if there's a valid form action URL or it's a CF7 form
+            if (form_action and form_action.strip()) or detect_wordpress_cf7_form(form):
+                # For CF7 forms, use the base URL if action is a fragment
+                if detect_wordpress_cf7_form(form) and form_action.startswith('#'):
+                    form_url = base_url + form_action
+                else:
+                    form_url = form_action if form_action else base_url
+                
                 all_contact_options.append({
                     'type': 'hidden_form',
-                    'url': form_action,
+                    'url': form_url,
                     'text': form_text[:50] + '...' if len(form_text) > 50 else form_text,
                     'score': score,
-                    'priority': 1,  # Hidden forms get high priority
+                    'priority': 0 if detect_wordpress_cf7_form(form) else 1,  # CF7 forms get highest priority
                     'element_info': {
                         'action': form_action,
                         'id': form_id,
-                        'class': form_class
+                        'class': form_class,
+                        'is_cf7': detect_wordpress_cf7_form(form)
                     }
                 })
     
@@ -1100,9 +1153,13 @@ def scrape_with_selenium_fallback(url: str) -> Dict[str, Any]:
             'url': url
         }
 
-def scrape_website_data(url: str) -> Dict[str, Any]:
+def scrape_website_data(url: str, csv_contact_form_url: str = None) -> Dict[str, Any]:
     """
     Scrape a single website and extract data using robust error handling
+    
+    Args:
+        url: Website URL to scrape
+        csv_contact_form_url: Contact form URL provided in CSV (if any)
     """
     try:
         # Use robust scraping with comprehensive error handling
@@ -1128,8 +1185,14 @@ def scrape_website_data(url: str) -> Dict[str, Any]:
         
         logger.info(f"Successfully scraped {url} using {result.get('method', 'requests')}")
         
+        # If CSV provided a contact form URL, use it instead of searching
+        if csv_contact_form_url:
+            logger.info(f"Using CSV-provided contact form URL: {csv_contact_form_url}")
+            info['has_contact_form'] = True
+            info['contactFormUrl'] = csv_contact_form_url
+            info['contact_form_source'] = 'csv'
         # Enhanced: Try Selenium-based popup detection if no contact form found
-        if not info['has_contact_form']:
+        elif not info['has_contact_form']:
             logger.info(f"No contact form found via static analysis for {url}, trying Selenium detection...")
             selenium_result = detect_popup_contact_forms_with_selenium(url)
             
@@ -1435,8 +1498,18 @@ def scrape_websites_task(self, fileUploadId: str, userId: str, websites: List[st
             try:
                 logger.info(f"Scraping website {i+1}/{totalWebsites}: {website}")
                 
+                # Get contact form URL from database if available
+                csv_contact_form_url = None
+                if isinstance(website, dict) and 'contactFormUrl' in website:
+                    csv_contact_form_url = website['contactFormUrl']
+                elif isinstance(website, str):
+                    # Try to get contact form URL from database
+                    website_record = db_manager.get_website_by_url(website, fileUploadId)
+                    if website_record and website_record.get('contactFormUrl'):
+                        csv_contact_form_url = website_record['contactFormUrl']
+                
                 # Scrape the website
-                website_data = scrape_website_data(website)
+                website_data = scrape_website_data(website, csv_contact_form_url)
                 
                 # Update existing website record with scraping data
                 success = db_manager.update_website_with_scraping_data(
@@ -1675,8 +1748,18 @@ async def scrape_websites_async(fileUploadId: str, userId: str, websites: List[s
     async with aiohttp.ClientSession() as session:
         for i, website in enumerate(websites):
             try:
+                # Get contact form URL from database if available
+                csv_contact_form_url = None
+                if isinstance(website, dict) and 'contactFormUrl' in website:
+                    csv_contact_form_url = website['contactFormUrl']
+                elif isinstance(website, str):
+                    # Try to get contact form URL from database
+                    website_record = db_manager.get_website_by_url(website, fileUploadId)
+                    if website_record and website_record.get('contactFormUrl'):
+                        csv_contact_form_url = website_record['contactFormUrl']
+                
                 # Use the same scraping logic but with aiohttp
-                website_data = scrape_website_data(website)
+                website_data = scrape_website_data(website, csv_contact_form_url)
                 
                 # Update existing website record with scraping data
                 success = db_manager.update_website_with_scraping_data(

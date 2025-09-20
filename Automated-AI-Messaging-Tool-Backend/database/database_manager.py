@@ -1584,12 +1584,13 @@ class DatabaseManager:
             logger.error(f"Error getting file upload by original name: {e}")
             return None
     
-    def get_website_by_url(self, url: str) -> Optional[Dict[str, Any]]:
+    def get_website_by_url(self, url: str, file_upload_id: str = None) -> Optional[Dict[str, Any]]:
         """
         Get website record by URL
         
         Args:
             url: Website URL to search for
+            file_upload_id: Optional file upload ID to filter by
             
         Returns:
             Website data or None if not found
@@ -1597,17 +1598,28 @@ class DatabaseManager:
         try:
             self._ensure_connection()
             
-            query = """
-                SELECT id, "userId", "fileUploadId", "websiteUrl", "companyName", 
-                       "businessType", "industry", "aboutUsContent", "scrapingStatus", 
-                       "messageStatus", "generatedMessage", "createdAt", "updatedAt"
-                FROM websites 
-                WHERE "websiteUrl" = %s
-                ORDER BY "updatedAt" DESC
-                LIMIT 1
-            """
+            if file_upload_id:
+                query = """
+                    SELECT id, "userId", "fileUploadId", "websiteUrl", "contactFormUrl", "companyName", 
+                           "businessType", "industry", "aboutUsContent", "scrapingStatus", 
+                           "messageStatus", "generatedMessage", "createdAt", "updatedAt"
+                    FROM websites 
+                    WHERE "websiteUrl" = %s AND "fileUploadId" = %s
+                    ORDER BY "updatedAt" DESC
+                """
+                params = (url, file_upload_id)
+            else:
+                query = """
+                    SELECT id, "userId", "fileUploadId", "websiteUrl", "contactFormUrl", "companyName", 
+                           "businessType", "industry", "aboutUsContent", "scrapingStatus", 
+                           "messageStatus", "generatedMessage", "createdAt", "updatedAt"
+                    FROM websites 
+                    WHERE "websiteUrl" = %s
+                    ORDER BY "updatedAt" DESC
+                """
+                params = (url,)
             
-            self.cursor.execute(query, (url,))
+            self.cursor.execute(query, params)
             result = self.cursor.fetchone()
             
             if result:
@@ -2042,3 +2054,143 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error updating website industry: {e}")
             return False 
+    
+    def get_stuck_uploads(self, stuck_threshold: datetime) -> List[Dict[str, Any]]:
+        """
+        Get file uploads that have been stuck for more than the threshold time
+        """
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    query = """
+                        SELECT id, "userId", filename, status, "updatedAt"
+                        FROM file_uploads 
+                        WHERE status IN ('CONTACT_FORM_SUBMISSION_IN_PROGRESS', 'CONTACT_FORM_SUBMISSION_FAILED')
+                        AND "updatedAt" < %s
+                        ORDER BY "updatedAt" ASC
+                    """
+                    
+                    cursor.execute(query, (stuck_threshold,))
+                    results = cursor.fetchall()
+                    
+                    stuck_uploads = []
+                    for row in results:
+                        stuck_uploads.append({
+                            'id': row[0],
+                            'userId': row[1],
+                            'filename': row[2],
+                            'status': row[3],
+                            'updatedAt': row[4]
+                        })
+                    
+                    return stuck_uploads
+                    
+        except Exception as e:
+            logger.error(f"Error getting stuck uploads: {e}")
+            return []
+    
+    def get_websites_for_form_submission(self, file_upload_id: str) -> List[Dict[str, Any]]:
+        """
+        Get websites that need form submission for a specific upload
+        """
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    query = """
+                        SELECT id, "websiteUrl", "contactFormUrl", "generatedMessage", "submissionStatus"
+                        FROM websites 
+                        WHERE "fileUploadId" = %s 
+                        AND "submissionStatus" IN ('PENDING', 'FAILED')
+                        AND "generatedMessage" IS NOT NULL
+                        ORDER BY "createdAt" ASC
+                    """
+                    
+                    cursor.execute(query, (file_upload_id,))
+                    results = cursor.fetchall()
+                    
+                    websites = []
+                    for row in results:
+                        websites.append({
+                            'id': row[0],
+                            'websiteUrl': row[1],
+                            'contactFormUrl': row[2],
+                            'generatedMessage': row[3],
+                            'submissionStatus': row[4],
+                            'fileUploadId': file_upload_id
+                        })
+                    
+                    return websites
+                    
+        except Exception as e:
+            logger.error(f"Error getting websites for form submission: {e}")
+            return []
+    
+    def get_old_failed_uploads(self, cleanup_threshold: datetime) -> List[Dict[str, Any]]:
+        """
+        Get old failed uploads that can be cleaned up
+        """
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    query = """
+                        SELECT id, "userId", filename, status, "updatedAt"
+                        FROM file_uploads 
+                        WHERE status IN ('CONTACT_FORM_SUBMISSION_FAILED', 'SCRAPING_FAILED', 'MESSAGE_GENERATION_FAILED')
+                        AND "updatedAt" < %s
+                        ORDER BY "updatedAt" ASC
+                    """
+                    
+                    cursor.execute(query, (cleanup_threshold,))
+                    results = cursor.fetchall()
+                    
+                    old_uploads = []
+                    for row in results:
+                        old_uploads.append({
+                            'id': row[0],
+                            'userId': row[1],
+                            'filename': row[2],
+                            'status': row[3],
+                            'updatedAt': row[4]
+                        })
+                    
+                    return old_uploads
+                    
+        except Exception as e:
+            logger.error(f"Error getting old failed uploads: {e}")
+            return []
+    
+    def delete_websites_for_upload(self, file_upload_id: str) -> bool:
+        """
+        Delete all websites associated with a file upload
+        """
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    query = "DELETE FROM websites WHERE \"fileUploadId\" = %s"
+                    cursor.execute(query, (file_upload_id,))
+                    conn.commit()
+                    
+                    logger.info(f"Deleted websites for upload {file_upload_id}")
+                    return True
+                    
+        except Exception as e:
+            logger.error(f"Error deleting websites for upload {file_upload_id}: {e}")
+            return False
+    
+    def delete_file_upload(self, file_upload_id: str) -> bool:
+        """
+        Delete a file upload record
+        """
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    query = "DELETE FROM file_uploads WHERE id = %s"
+                    cursor.execute(query, (file_upload_id,))
+                    conn.commit()
+                    
+                    logger.info(f"Deleted file upload {file_upload_id}")
+                    return True
+                    
+        except Exception as e:
+            logger.error(f"Error deleting file upload {file_upload_id}: {e}")
+            return False

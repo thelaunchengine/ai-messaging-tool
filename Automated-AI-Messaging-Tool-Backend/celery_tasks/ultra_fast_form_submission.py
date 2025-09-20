@@ -173,7 +173,8 @@ class UltraFastFormSubmitter:
                     website_id=website.get('id'),
                     submission_status="FAILED",
                     submission_time=submission_result.get('submission_time'),
-                    error_message=submission_result.get('error', 'Unknown error')
+                    error_message=submission_result.get('error', 'Unknown error'),
+                    submitted_form_fields=json.dumps(submission_result.get('fields_submitted', {}))
                 )
             
             return {

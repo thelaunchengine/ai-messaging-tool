@@ -1085,8 +1085,9 @@ async def generate_ai_message_preview(website_data: List[Dict[str, Any]]):
 async def upload_from_frontend(file: UploadFile = File(...), userId: str = Query(...)):
     """Upload a CSV file from frontend, copy to backend directory, and start processing"""
     try:
-        if not file.filename.endswith('.csv'):
-            raise HTTPException(status_code=400, detail="Only CSV files are supported")
+        # Check if file is supported format (CSV or Excel)
+        if not (file.filename.endswith('.csv') or file.filename.endswith('.xlsx') or file.filename.endswith('.xls')):
+            raise HTTPException(status_code=400, detail="Only CSV and Excel files (.csv, .xlsx, .xls) are supported")
         
         # Check if file with same name already exists
         db_manager = DatabaseManager()
@@ -1103,7 +1104,7 @@ async def upload_from_frontend(file: UploadFile = File(...), userId: str = Query
             file_upload_id = str(uuid.uuid4())
             
             # Create backend uploads directory if it doesn't exist
-            backend_upload_dir = "/var/www/ai-messaging-tool/Automated-AI-Messaging-Tool-Backend/uploads"
+            backend_upload_dir = "/home/ubuntu/ai-messaging-tool/Automated-AI-Messaging-Tool-Backend/uploads"
             os.makedirs(backend_upload_dir, exist_ok=True)
             
             # Save file to backend uploads directory with unique name
@@ -1118,6 +1119,10 @@ async def upload_from_frontend(file: UploadFile = File(...), userId: str = Query
             
             logger.info(f"File copied to backend: {file_upload_id} -> {backend_file_path}")
             
+            # Determine file type based on extension
+            file_extension = file.filename.lower().split('.')[-1]
+            file_type = "csv" if file_extension == "csv" else "excel"
+            
             # Create new file upload record in database
             success = db_manager.create_file_upload(
                 fileUploadId=file_upload_id,
@@ -1125,7 +1130,7 @@ async def upload_from_frontend(file: UploadFile = File(...), userId: str = Query
                 filename=backend_file_path,  # Use backend path
                 originalName=file.filename,
                 fileSize=len(content),
-                fileType="csv",
+                fileType=file_type,
                 status="UPLOADING",
                 totalWebsites=0,
                 processedWebsites=0,
@@ -1144,38 +1149,75 @@ async def upload_from_frontend(file: UploadFile = File(...), userId: str = Query
             from celery_tasks.file_tasks import process_file_upload_task
             import csv
             
-            # Automatically detect CSV column names
+            # Automatically detect column names based on file type
             website_column = "Website URL"  # default
             contact_form_column = "Contact Form URL"  # default
             
             try:
-                # Parse CSV header from content in memory to avoid race condition
-                content_str = content.decode('utf-8')
-                csv_lines = content_str.split('\n')
-                if len(csv_lines) > 0:
-                    headers = csv_lines[0].split(',')
-                    
-                    # Look for common column name variations with improved logic
-                    for header in headers:
-                        header_lower = header.lower().strip()
+                if file_type == "csv":
+                    # Parse CSV header from content in memory to avoid race condition
+                    content_str = content.decode('utf-8')
+                    csv_lines = content_str.split('\n')
+                    if len(csv_lines) > 0:
+                        headers = csv_lines[0].split(',')
                         
-                        # More specific matching for contact form columns first
-                        if any(keyword in header_lower for keyword in ['contact', 'form']) and not any(keyword in header_lower for keyword in ['website', 'url', 'site']):
-                            contact_form_column = header
-                        # Then look for website columns that don't contain contact/form
-                        elif any(keyword in header_lower for keyword in ['website', 'url', 'site']) and not any(keyword in header_lower for keyword in ['contact', 'form']):
-                            website_column = header
-                        # Handle mixed columns like "website url contact" - prioritize based on position
-                        elif 'contact' in header_lower and any(keyword in header_lower for keyword in ['website', 'url']):
-                            contact_form_column = header
-                        elif any(keyword in header_lower for keyword in ['website', 'url']) and 'contact' not in header_lower:
-                            website_column = header
-                    
-                    logger.info(f"Detected columns: Website='{website_column}', Contact='{contact_form_column}'")
+                        # Look for common column name variations with improved logic
+                        for header in headers:
+                            header_lower = header.lower().strip()
+                            
+                            # More specific matching for contact form columns first
+                            if any(keyword in header_lower for keyword in ['contact', 'form']) and not any(keyword in header_lower for keyword in ['website', 'url', 'site']):
+                                contact_form_column = header
+                            # Then look for website columns that don't contain contact/form
+                            elif any(keyword in header_lower for keyword in ['website', 'url', 'site']) and not any(keyword in header_lower for keyword in ['contact', 'form']):
+                                website_column = header
+                            # Handle mixed columns like "website url contact" - prioritize based on position
+                            elif 'contact' in header_lower and any(keyword in header_lower for keyword in ['website', 'url']):
+                                contact_form_column = header
+                            elif any(keyword in header_lower for keyword in ['website', 'url']) and 'contact' not in header_lower:
+                                website_column = header
+                        
+                        logger.info(f"Detected CSV columns: Website='{website_column}', Contact='{contact_form_column}'")
+                    else:
+                        logger.warning("No CSV content found, using default columns")
                 else:
-                    logger.warning("No CSV content found, using default columns")
-            except Exception as csv_error:
-                logger.warning(f"Could not detect CSV columns, using defaults: {csv_error}")
+                    # For Excel files, we'll use pandas to read headers
+                    import pandas as pd
+                    import tempfile
+                    
+                    # Create temporary file for pandas to read
+                    with tempfile.NamedTemporaryFile(suffix=f'.{file_extension}', delete=False) as temp_file:
+                        temp_file.write(content)
+                        temp_file_path = temp_file.name
+                    
+                    try:
+                        # Read Excel file to get column names
+                        df = pd.read_excel(temp_file_path)
+                        headers = df.columns.tolist()
+                        
+                        # Look for common column name variations
+                        for header in headers:
+                            header_lower = header.lower().strip()
+                            
+                            # More specific matching for contact form columns first
+                            if any(keyword in header_lower for keyword in ['contact', 'form']) and not any(keyword in header_lower for keyword in ['website', 'url', 'site']):
+                                contact_form_column = header
+                            # Then look for website columns that don't contain contact/form
+                            elif any(keyword in header_lower for keyword in ['website', 'url', 'site']) and not any(keyword in header_lower for keyword in ['contact', 'form']):
+                                website_column = header
+                            # Handle mixed columns like "website url contact" - prioritize based on position
+                            elif 'contact' in header_lower and any(keyword in header_lower for keyword in ['website', 'url']):
+                                contact_form_column = header
+                            elif any(keyword in header_lower for keyword in ['website', 'url']) and 'contact' not in header_lower:
+                                website_column = header
+                        
+                        logger.info(f"Detected Excel columns: Website='{website_column}', Contact='{contact_form_column}'")
+                    finally:
+                        # Clean up temporary file
+                        os.unlink(temp_file_path)
+                        
+            except Exception as column_error:
+                logger.warning(f"Could not detect columns, using defaults: {column_error}")
             
             # Start the processing task
             # DEBUG: Log all variables before task call
@@ -1203,7 +1245,7 @@ async def upload_from_frontend(file: UploadFile = File(...), userId: str = Query
                 task = process_file_upload_task.delay(
                     fileUploadId=file_upload_id, 
                     file_path=backend_file_path, 
-                    file_type="csv", 
+                    file_type=file_type, 
                     total_chunks=1,  # totalChunks
                     userId=userId,
                     website_url_column=website_column,
@@ -1359,4 +1401,139 @@ async def download_file(filename: str):
         
     except Exception as e:
         logger.error(f"Error downloading file {filename}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/admin/history")
+async def get_admin_history(userId: str = Query(..., description="Admin user ID")):
+    """Get admin history with all file uploads and statistics"""
+    try:
+        db_manager = DatabaseManager()
+        
+        # Get all file uploads with user information
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        query = """
+            SELECT 
+                fu.id,
+                fu.filename,
+                fu."originalName",
+                fu."fileSize",
+                fu."fileType",
+                fu.status,
+                fu."totalWebsites",
+                fu."processedWebsites",
+                fu."failedWebsites",
+                fu."createdAt",
+                fu."updatedAt",
+                u.name as user_name,
+                u.email as user_email
+            FROM file_uploads fu
+            LEFT JOIN users u ON fu."userId" = u.id
+            ORDER BY fu."createdAt" DESC
+        """
+        
+        cursor.execute(query)
+        results = cursor.fetchall()
+        
+        history_items = []
+        for row in results:
+            # Calculate statistics
+            websites_count = row[6] or 0
+            processed_websites = row[7] or 0
+            failed_websites = row[8] or 0
+            
+            # Get messages sent count for this upload
+            cursor.execute("""
+                SELECT COUNT(*) FROM websites 
+                WHERE "fileUploadId" = %s AND "submissionStatus" = 'SUCCESS'
+            """, (row[0],))
+            messages_sent = cursor.fetchone()[0] or 0
+            
+            # Calculate success rate
+            success_rate = (processed_websites / websites_count * 100) if websites_count > 0 else 0
+            
+            # Calculate processing time
+            created_at = row[9]
+            updated_at = row[10]
+            processing_time = "N/A"
+            if created_at and updated_at:
+                time_diff = updated_at - created_at
+                hours = time_diff.total_seconds() / 3600
+                if hours < 1:
+                    processing_time = f"{int(time_diff.total_seconds() / 60)}m"
+                else:
+                    processing_time = f"{hours:.1f}h"
+            
+            history_items.append({
+                "id": row[0],
+                "fileName": row[2] or row[1],  # Use originalName if available, otherwise filename
+                "userName": row[11] or "Unknown User",
+                "userEmail": row[12] or "unknown@example.com",
+                "fileSize": f"{(row[3] or 0) / 1024:.1f} KB" if row[3] else "0 KB",
+                "fileType": row[4] or "Unknown",
+                "uploadDate": row[9].isoformat() if row[9] else None,
+                "status": row[5] or "UNKNOWN",
+                "websitesCount": websites_count,
+                "messagesSent": messages_sent,
+                "processedWebsites": processed_websites,
+                "failedWebsites": failed_websites,
+                "successRate": round(success_rate, 1),
+                "processingTime": processing_time
+            })
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            "success": True,
+            "history": history_items,
+            "totalCount": len(history_items)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting admin history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/admin/history/{fileId}/download")
+async def download_admin_file(fileId: str, userId: str = Query(..., description="Admin user ID")):
+    """Download a file from admin history"""
+    try:
+        db_manager = DatabaseManager()
+        
+        # Get file upload details
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT filename, "originalName" FROM file_uploads WHERE id = %s
+        """, (fileId,))
+        
+        result = cursor.fetchone()
+        if not result:
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        filename, original_name = result
+        cursor.close()
+        conn.close()
+        
+        # Construct the file path
+        import os
+        upload_dir = "/var/www/ai-messaging-tool/Automated-AI-Messaging-Tool-Backend/uploads"
+        file_path = os.path.join(upload_dir, filename)
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found on disk")
+        
+        # Return the file
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            path=file_path,
+            filename=original_name or filename,
+            media_type='application/octet-stream'
+        )
+        
+    except Exception as e:
+        logger.error(f"Error downloading admin file {fileId}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
