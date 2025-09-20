@@ -60,7 +60,6 @@ import MainCard from '../../../../components/MainCard';
 
 export default function AdminReportsPage() {
   const [reportData, setReportData] = useState([]);
-  const [statistics, setStatistics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -82,7 +81,7 @@ export default function AdminReportsPage() {
         const user = JSON.parse(adminUser);
         const userId = user.id;
         
-        const response = await fetch(`/api/admin/reports?userId=${userId}&t=${Date.now()}`);
+        const response = await fetch(`/api/admin/reports?userId=${userId}`);
         
         if (!response.ok) {
           throw new Error('Failed to fetch report data');
@@ -90,7 +89,6 @@ export default function AdminReportsPage() {
         
         const data = await response.json();
         setReportData(data.reports || []);
-        setStatistics(data.statistics || null);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred');
       } finally {
@@ -197,10 +195,10 @@ export default function AdminReportsPage() {
   };
 
   const stats = [
-    { label: 'Total Users', value: statistics?.totalUsers || reportData.length, icon: <People />, color: 'primary' },
-    { label: 'Total Files', value: statistics?.totalFiles || reportData.reduce((sum, item) => sum + (item.filesUploaded || 0), 0), icon: <CloudUpload />, color: 'secondary' },
-    { label: 'Total Websites', value: statistics?.totalWebsites || reportData.reduce((sum, item) => sum + (item.websitesProcessed || 0), 0), icon: <CheckCircle />, color: 'success' },
-    { label: 'Total Messages', value: statistics?.totalMessagesSent || reportData.reduce((sum, item) => sum + (item.messagesSent || 0), 0), icon: <Analytics />, color: 'info' }
+    { label: 'Total Users', value: reportData.length, icon: <People />, color: 'primary' },
+    { label: 'Total Files', value: reportData.reduce((sum, item) => sum + (item.filesUploaded || 0), 0), icon: <CloudUpload />, color: 'secondary' },
+    { label: 'Total Websites', value: reportData.reduce((sum, item) => sum + (item.websitesProcessed || 0), 0), icon: <CheckCircle />, color: 'success' },
+    { label: 'Total Messages', value: reportData.reduce((sum, item) => sum + (item.messagesSent || 0), 0), icon: <Analytics />, color: 'info' }
   ];
 
   if (loading) {

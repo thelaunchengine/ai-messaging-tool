@@ -1,16 +1,17 @@
 module.exports = {
   apps: [
     {
-      name: 'aimsg-frontend',
+      name: 'frontend',
       script: 'npm',
       args: 'start',
-      cwd: '/home/xb3353/Automated-AI-Messaging-Tool-Frontend',
+      cwd: '/home/ubuntu/ai-messaging-tool/Automated-AI-Messaging-Tool-Frontend',
       env: {
-        NODE_ENV: 'development',
-        PORT: 3002,
-        NEXTAUTH_URL: 'http://103.215.159.51:3002',
+        NODE_ENV: 'production',
+        PORT: 3000,
+        NEXTAUTH_URL: 'http://34.195.237.115:3000',
         NEXTAUTH_SECRET: 'your-secret-key-here',
-        PYTHON_API_URL: 'http://103.215.159.51:8001'
+        PYTHON_API_URL: 'http://98.85.16.204:8001',
+        NEXT_PUBLIC_PYTHON_BACKEND_URL: 'http://98.85.16.204:8001'
       },
       instances: 1,
       autorestart: true,
@@ -22,4 +23,4 @@ module.exports = {
       time: true
     }
   ]
-}; 
+};

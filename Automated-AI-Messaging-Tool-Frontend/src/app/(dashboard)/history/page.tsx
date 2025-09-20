@@ -33,6 +33,7 @@ import {
   Search as SearchIcon
 } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
+import { normalizeStatus, getStatusColor } from '../../../utils/statusUtils';
 
 interface FileUpload {
   id: string;
@@ -120,7 +121,7 @@ export default function HistoryPage() {
         if (statusFilter !== 'all') {
           // Filter by status
           filteredUploads = data.fileUploads.filter((upload: any) => 
-            normalizeStatus(upload.status) === statusFilter
+            normalizeStatus(upload.status).status === statusFilter
           );
           
           // Apply pagination to filtered results
@@ -197,45 +198,6 @@ export default function HistoryPage() {
   };
 
   // Normalize detailed status to generic status for filtering
-  const normalizeStatus = (status: string) => {
-    if (!status) return 'pending';
-    
-    const statusLower = status.toLowerCase();
-    
-    // Completed statuses
-    if (statusLower.includes('completed') || statusLower.includes('success')) {
-      return 'completed';
-    }
-    
-    // Processing statuses
-    if (statusLower.includes('processing') || statusLower.includes('pending')) {
-      return 'processing';
-    }
-    
-    // Error statuses
-    if (statusLower.includes('error') || statusLower.includes('failed') || statusLower.includes('fail')) {
-      return 'error';
-    }
-    
-    // Default to pending for unknown statuses
-    return 'pending';
-  };
-
-  const getStatusColor = (status: string) => {
-    const normalizedStatus = normalizeStatus(status);
-    switch (normalizedStatus) {
-      case 'completed':
-        return 'success';
-      case 'processing':
-        return 'warning';
-      case 'error':
-        return 'error';
-      case 'pending':
-        return 'default';
-      default:
-        return 'default';
-    }
-  };
 
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
@@ -371,8 +333,8 @@ export default function HistoryPage() {
                   </TableCell>
                   <TableCell>
                     <Chip
-                      label={normalizeStatus(upload.status || 'unknown')}
-                      color={getStatusColor(upload.status || 'unknown') as any}
+                      label={normalizeStatus(upload.status || 'unknown').label}
+                      color={normalizeStatus(upload.status || 'unknown').color as any}
                       size="small"
                     />
                   </TableCell>

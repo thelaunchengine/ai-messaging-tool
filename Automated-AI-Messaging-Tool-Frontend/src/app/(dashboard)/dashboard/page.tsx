@@ -35,6 +35,7 @@ import {
   BatchPrediction
 } from '@mui/icons-material';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { normalizeStatus } from '../../../utils/statusUtils';
 
 // Icon mapping for dynamic icons
 const iconMap = {
@@ -273,9 +274,9 @@ export default function DashboardPage() {
                       {activity.websites && ` (${activity.websites} websites)`}
                     </Typography>
                     <Chip 
-                      label={activity.status || 'Unknown'} 
+                      label={normalizeStatus(activity.status || 'Unknown').label} 
                       size="small" 
-                      color={activity.status === 'COMPLETED' ? 'success' : activity.status === 'PROCESSING' ? 'warning' : 'default'}
+                      color={normalizeStatus(activity.status || 'Unknown').color}
                       sx={{ ml: 'auto' }}
                     />
                     <Typography variant="caption" color="text.secondary">

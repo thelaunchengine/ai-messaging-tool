@@ -1,7 +1,6 @@
 from fastapi import FastAPI, HTTPException, WebSocket, Query, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import asyncio
 from typing import List, Optional, Dict, Any
 import time
 import logging
@@ -9,48 +8,22 @@ import os
 from datetime import datetime
 from enum import Enum
 import uuid
-# Import Celery tasks (lazy imports to avoid startup issues)
-# from celery_tasks.scraping_tasks import scrape_websites_task, generate_messages_task
-# from celery_tasks.file_tasks import process_file_upload_task, process_chunk_task, extract_websites_from_file_task
-# from celery_tasks.form_submission_tasks import contact_form_submission_task
+# Import Celery tasks
+from celery_tasks.scraping_tasks import scrape_websites_task, generate_messages_task
+from celery_tasks.file_tasks import process_file_upload_task, process_chunk_task, extract_websites_from_file_task
+from celery_tasks.form_submission_tasks import contact_form_submission_task
 from database.database_manager import DatabaseManager
 from ai.message_generator import GeminiMessageGenerator, PredefinedMessageIntegration
-from services.s3_service import S3Service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
-    title="AI Messaging Backend with Celery", 
-    version="1.0.0",
-    timeout=300  # 5 minutes default timeout
-)
-
-# Initialize S3 service (lazy initialization to avoid startup issues)
-# s3_service = S3Service()
-
-# Health check endpoint
-@app.get("/api/health")
-async def health_check():
-    """Health check endpoint for load balancer"""
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
-
-@app.get("/api/debug/env")
-async def debug_env():
-    """Debug endpoint to check environment variables"""
-    return {
-        "DATABASE_URL": os.getenv('DATABASE_URL', 'NOT_SET'),
-        "REDIS_URL": os.getenv('REDIS_URL', 'NOT_SET'),
-        "S3_BUCKET_NAME": os.getenv('S3_BUCKET_NAME', 'NOT_SET'),
-        "AWS_REGION": os.getenv('AWS_REGION', 'NOT_SET'),
-        "PORT": os.getenv('PORT', 'NOT_SET')
-    }
-
+app = FastAPI(title="AI Messaging Backend with Celery", version="1.0.0")
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for now
+    allow_origins=["http://103.215.159.51:3001", "http://localhost:3001", "http://34.195.237.115:3001"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -495,9 +468,6 @@ async def start_scraping(request: ScrapingRequest):
         # Extract website URLs from the request
         websites = [site.get('url', site) if isinstance(site, dict) else site for site in request.websites]
         
-        # Import Celery task lazily
-        from celery_tasks.scraping_tasks import scrape_websites_task
-        
         # Start Celery task with correct parameter order
         task = scrape_websites_task.delay(
             fileUploadId=request.fileUploadId,
@@ -557,9 +527,6 @@ async def trigger_ai_generation_for_file_upload(request: Dict[str, Any]):
                 'userId': website.get('userId')
             })
         
-        # Import Celery task lazily
-        from celery_tasks.scraping_tasks import generate_messages_task
-        
         # Start Celery task for AI message generation
         task = generate_messages_task.delay(
             website_data=website_data,
@@ -585,9 +552,6 @@ async def trigger_ai_generation_for_file_upload(request: Dict[str, Any]):
 async def process_chunk(chunk_id: str, chunk_number: int, start_row: int, end_row: int, file_path: str, fileType: str):
     """Process a single chunk using Celery"""
     try:
-        # Import Celery task lazily
-        from celery_tasks.file_tasks import process_chunk_task
-        
         # Start Celery task
         task = process_chunk_task.delay(
             chunk_id=chunk_id,
@@ -637,7 +601,7 @@ async def submit_contact_forms(request: FormSubmissionRequest):
 async def get_task_status(task_id: str):
     """Get Celery task status with progress tracking"""
     try:
-        # Import Celery app lazily
+        # Get task result from Celery
         from celery_app import celery_app
         result = celery_app.AsyncResult(task_id)
         
@@ -1049,23 +1013,6 @@ async def bulk_generate_messages(request: Dict[str, Any]):
 @app.post("/api/ai/generate-preview")
 async def generate_ai_message_preview(website_data: List[Dict[str, Any]]):
     """Generate AI message preview for UI display - no database storage"""
-    import asyncio
-    try:
-        # Set timeout for AI generation (2 minutes per website, max 10 minutes total)
-        max_timeout = min(600, len(website_data) * 120)  # 2 minutes per website, max 10 minutes
-        return await asyncio.wait_for(
-            _generate_ai_preview_internal(website_data),
-            timeout=max_timeout
-        )
-    except asyncio.TimeoutError:
-        logger.error(f"AI generation preview timeout for {len(website_data)} websites")
-        raise HTTPException(status_code=408, detail="AI generation timed out. Please try with fewer websites.")
-    except Exception as e:
-        logger.error(f"Error in generate_ai_message_preview: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-async def _generate_ai_preview_internal(website_data: List[Dict[str, Any]]):
-    """Internal AI preview generation function"""
     try:
         if not website_data:
             raise HTTPException(status_code=400, detail="Website data is required")
@@ -1137,91 +1084,13 @@ async def _generate_ai_preview_internal(website_data: List[Dict[str, Any]]):
 @app.post("/api/upload-from-frontend")
 async def upload_from_frontend(file: UploadFile = File(...), userId: str = Query(...)):
     """Upload a CSV file from frontend, copy to backend directory, and start processing"""
-    import asyncio
-    try:
-        # Set timeout for the entire operation (5 minutes)
-        return await asyncio.wait_for(
-            _upload_file_internal(file, userId),
-            timeout=300.0
-        )
-    except asyncio.TimeoutError:
-        logger.error(f"File upload timeout for user {userId}")
-        raise HTTPException(status_code=408, detail="Upload operation timed out. Please try again with a smaller file.")
-    except Exception as e:
-        logger.error(f"Error in upload_from_frontend: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/upload")
-async def upload_json(request: dict):
-    """Upload a CSV file from frontend using JSON format"""
-    import asyncio
-    import base64
-    from io import BytesIO
-    
-    try:
-        # Extract data from JSON request
-        filename = request.get('filename', '')
-        original_name = request.get('originalName', filename)
-        file_size = request.get('fileSize', 0)
-        file_type = request.get('fileType', 'csv')
-        content_b64 = request.get('content', '')
-        user_id = request.get('userId', 'default-user')  # Default user ID if not provided
-        
-        # Validate required fields
-        if not filename or not content_b64:
-            raise HTTPException(status_code=400, detail="Missing required fields: filename and content")
-        
-        if not filename.endswith('.csv'):
-            raise HTTPException(status_code=400, detail="Only CSV files are supported")
-        
-        # Decode base64 content
-        try:
-            content = base64.b64decode(content_b64)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid base64 content: {str(e)}")
-        
-        # Create a mock UploadFile object from the content
-        from fastapi import UploadFile
-        from io import BytesIO
-        
-        file_obj = BytesIO(content)
-        upload_file = UploadFile(
-            file=file_obj,
-            filename=filename,
-            size=len(content)
-        )
-        
-        # Set timeout for the entire operation (5 minutes)
-        return await asyncio.wait_for(
-            _upload_file_internal(upload_file, user_id),
-            timeout=300.0
-        )
-        
-    except asyncio.TimeoutError:
-        logger.error(f"File upload timeout for user {user_id}")
-        raise HTTPException(status_code=408, detail="Upload operation timed out. Please try again with a smaller file.")
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
-        raise
-    except Exception as e:
-        logger.error(f"Error in upload_json: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-async def _upload_file_internal(file: UploadFile, userId: str):
-    """Internal file upload function with timeout handling"""
     try:
         if not file.filename.endswith('.csv'):
             raise HTTPException(status_code=400, detail="Only CSV files are supported")
         
-        # Check if file with same name already exists (run in thread pool)
+        # Check if file with same name already exists
         db_manager = DatabaseManager()
-        loop = asyncio.get_event_loop()
-        existing_upload = await loop.run_in_executor(
-            None,
-            db_manager.get_file_upload_by_original_name,
-            file.filename,
-            userId
-        )
+        existing_upload = db_manager.get_file_upload_by_original_name(file.filename, userId)
         
         if existing_upload:
             # Reject duplicate file name and return error
@@ -1230,50 +1099,45 @@ async def _upload_file_internal(file: UploadFile, userId: str):
                 detail=f"A file with the name '{file.filename}' already exists. Please upload a file with a different name."
             )
         else:
-            # Create new file upload record
+            # Create new file upload record with UUID
             file_upload_id = str(uuid.uuid4())
+            
+            # Create backend uploads directory if it doesn't exist
+            backend_upload_dir = "/var/www/ai-messaging-tool/Automated-AI-Messaging-Tool-Backend/uploads"
+            os.makedirs(backend_upload_dir, exist_ok=True)
+            
+            # Save file to backend uploads directory with unique name
+            backend_file_path = os.path.join(backend_upload_dir, f"{file_upload_id}_{file.filename}")
             
             # Read file content
             content = await file.read()
             
-            # Initialize S3 service lazily
-            s3_service = S3Service()
+            # Write to backend directory
+            with open(backend_file_path, "wb") as buffer:
+                buffer.write(content)
             
-            # Upload file to S3 asynchronously
-            s3_file_key = f"uploads/{file_upload_id}_{file.filename}"
-            s3_url = await s3_service.upload_file_async(
-                file_content=content,
-                file_key=s3_file_key,
-                content_type='text/csv'
+            logger.info(f"File copied to backend: {file_upload_id} -> {backend_file_path}")
+            
+            # Create new file upload record in database
+            success = db_manager.create_file_upload(
+                fileUploadId=file_upload_id,
+                userId=userId,
+                filename=backend_file_path,  # Use backend path
+                originalName=file.filename,
+                fileSize=len(content),
+                fileType="csv",
+                status="UPLOADING",
+                totalWebsites=0,
+                processedWebsites=0,
+                failedWebsites=0
             )
             
-            if not s3_url:
-                raise HTTPException(status_code=500, detail="Failed to upload file to S3")
+            if not success:
+                raise HTTPException(status_code=500, detail="Failed to create file upload record")
             
-            logger.info(f"File uploaded to S3: {file_upload_id} -> {s3_url}")
-            
-            # Create new file upload record in database with S3 URL (run in thread pool)
-            success = await loop.run_in_executor(
-                None,
-                db_manager.create_file_upload,
-                file_upload_id,
-                userId,
-                s3_url,  # Store S3 URL instead of local path
-                file.filename,
-                len(content),
-                "csv",
-                "UPLOADING",
-                0,
-                0,
-                0
-            )
-            
-            logger.info(f"Created new file upload: {file_upload_id} -> {s3_url}")
+            logger.info(f"Created new file upload: {file_upload_id} -> {backend_file_path}")
         
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to create file upload record")
-        
-        logger.info(f"File uploaded successfully: {file_upload_id} -> {s3_url}")
+        logger.info(f"File uploaded successfully: {file_upload_id} -> {backend_file_path}")
         
         # AUTOMATIC PROCESSING: Start file processing task immediately
         try:
@@ -1317,7 +1181,7 @@ async def _upload_file_internal(file: UploadFile, userId: str):
             # DEBUG: Log all variables before task call
             logger.info(f"DEBUG: About to call Celery task with parameters:")
             logger.info(f"DEBUG: fileUploadId={file_upload_id}")
-            logger.info(f"DEBUG: file_path={s3_file_key}")
+            logger.info(f"DEBUG: file_path={backend_file_path}")
             logger.info(f"DEBUG: file_type=csv")
             logger.info(f"DEBUG: total_chunks=1")
             logger.info(f"DEBUG: userId={userId}")
@@ -1325,52 +1189,65 @@ async def _upload_file_internal(file: UploadFile, userId: str):
             logger.info(f"DEBUG: contact_form_url_column={contact_form_column}")
             logger.info(f"DEBUG: All variables defined and ready")
             
-            # TEMPORARILY DISABLE CELERY PROCESSING FOR TESTING
-            # TODO: Re-enable after fixing Celery worker configuration in ECS
-            logger.info(f"DEBUG: Celery processing temporarily disabled for testing")
-            logger.info(f"DEBUG: File upload completed successfully: {file_upload_id}")
-            logger.info(f"DEBUG: S3 file key: {s3_file_key}")
-            logger.info(f"DEBUG: Detected columns: Website='{website_column}', Contact='{contact_form_column}'")
+            logger.info(f"DEBUG: Calling process_file_upload_task.delay() now...")
+            try:
+                logger.info(f"DEBUG: Task call parameters:")
+                logger.info(f"DEBUG: fileUploadId={file_upload_id}")
+                logger.info(f"DEBUG: file_path={backend_file_path}")
+                logger.info(f"DEBUG: file_type=csv")
+                logger.info(f"DEBUG: total_chunks=1")
+                logger.info(f"DEBUG: userId={userId}")
+                logger.info(f"DEBUG: website_url_column={website_column}")
+                logger.info(f"DEBUG: contact_form_url_column={contact_form_column}")
+                
+                task = process_file_upload_task.delay(
+                    fileUploadId=file_upload_id, 
+                    file_path=backend_file_path, 
+                    file_type="csv", 
+                    total_chunks=1,  # totalChunks
+                    userId=userId,
+                    website_url_column=website_column,
+                    contact_form_url_column=contact_form_column
+                )
+                
+                logger.info(f"DEBUG: Task call successful, task_id={task.id}")
+            except Exception as task_error:
+                logger.error(f"DEBUG: Task call failed with error: {task_error}")
+                logger.error(f"DEBUG: Error type: {type(task_error)}")
+                logger.error(f"DEBUG: Error details: {str(task_error)}")
+                import traceback
+                logger.error(f"DEBUG: Full traceback: {traceback.format_exc()}")
+                raise HTTPException(status_code=500, detail=f"Celery task failed: {task_error}")
             
-            # Update status to PROCESSING (run in thread pool)
-            await loop.run_in_executor(
-                None,
-                db_manager.update_file_upload_status,
-                file_upload_id,
-                "PROCESSING"
-            )
+            # Update status to PROCESSING
+            db_manager.update_file_upload_status(file_upload_id, "PROCESSING")
             
-            logger.info(f"File upload processing completed for upload {file_upload_id}")
+            logger.info(f"Automatically started processing task {task.id} for upload {file_upload_id}")
             
             return {
                 "success": True,
                 "fileUploadId": file_upload_id,
-                "filePath": s3_url,
+                "filePath": backend_file_path,
                 "originalName": file.filename,
                 "fileSize": len(content),
-                "taskId": "disabled-for-testing",
+                "taskId": task.id,
                 "status": "PROCESSING",
-                "message": f"File {file.filename} uploaded to S3 and processing started automatically"
+                "message": f"File {file.filename} uploaded to backend and processing started automatically"
             }
             
         except Exception as processing_error:
             logger.error(f"Error starting automatic processing: {processing_error}")
-            # Update status to ERROR (run in thread pool)
-            await loop.run_in_executor(
-                None,
-                db_manager.update_file_upload_status,
-                file_upload_id,
-                "ERROR"
-            )
+            # Update status to ERROR
+            db_manager.update_file_upload_status(file_upload_id, "ERROR")
             
             return {
                 "success": True,
                 "fileUploadId": file_upload_id,
-                "filePath": s3_url,
+                "filePath": backend_file_path,
                 "originalName": file.filename,
                 "fileSize": len(content),
                 "status": "UPLOADED_BUT_PROCESSING_FAILED",
-                "message": f"File uploaded to S3 but automatic processing failed. Manual processing required.",
+                "message": f"File uploaded to backend but automatic processing failed. Manual processing required.",
                 "error": str(processing_error)
             }
         
@@ -1483,17 +1360,3 @@ async def download_file(filename: str):
     except Exception as e:
         logger.error(f"Error downloading file {filename}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-# Trigger deployment
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv('PORT', 8001))
-    uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=port,
-        timeout_keep_alive=300,  # 5 minutes
-        timeout_graceful_shutdown=30,  # 30 seconds
-        limit_max_requests=1000,  # Restart worker after 1000 requests
-        limit_concurrency=100  # Max concurrent connections
-    )

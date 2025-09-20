@@ -602,13 +602,13 @@ const AdminResultsPage = () => {
                             )}
                             
                             {/* Submitted Form Fields */}
-                            {website.submittedFormFields && (
+                            {website.submittedFormFields ? (
                               <Box>
                                 <Typography variant="body2" color="text.secondary" gutterBottom>
                                   Submitted Fields:
                                 </Typography>
                                 <Box sx={{ 
-                                  backgroundColor: 'grey.50', 
+                                  backgroundColor: 'success.light', 
                                   p: 1, 
                                   borderRadius: 1,
                                   fontFamily: 'monospace',
@@ -619,10 +619,24 @@ const AdminResultsPage = () => {
                                   </pre>
                                 </Box>
                               </Box>
+                            ) : website.submissionStatus === 'FAILED' && (
+                              <Box>
+                                <Typography variant="body2" color="text.secondary" gutterBottom>
+                                  Submitted Fields:
+                                </Typography>
+                                <Typography variant="body2" color="error.main" sx={{ 
+                                  backgroundColor: 'error.light', 
+                                  p: 1, 
+                                  borderRadius: 1,
+                                  fontStyle: 'italic'
+                                }}>
+                                  No fields submitted - Form submission failed
+                                </Typography>
+                              </Box>
                             )}
                             
                             {/* Submission Response */}
-                            {website.responseContent && (
+                            {website.submissionResponse && (
                               <Box>
                                 <Typography variant="body2" color="text.secondary" gutterBottom>
                                   Submission Response:
@@ -633,20 +647,20 @@ const AdminResultsPage = () => {
                                   borderRadius: 1,
                                   fontFamily: 'monospace'
                                 }}>
-                                  {website.responseContent}
+                                  {website.submissionResponse}
                                 </Typography>
                               </Box>
                             )}
                             
                             {/* Error Message */}
-                            {website.errorMessage && (
+                            {website.submissionError && (
                               <Box>
                                 <Typography variant="body2" color="text.secondary" gutterBottom>
                                   Error:
                                 </Typography>
                                 <Alert severity="error" sx={{ py: 0 }}>
                                   <Typography variant="body2">
-                                    {website.errorMessage}
+                                    {website.submissionError}
                                   </Typography>
                                 </Alert>
                               </Box>

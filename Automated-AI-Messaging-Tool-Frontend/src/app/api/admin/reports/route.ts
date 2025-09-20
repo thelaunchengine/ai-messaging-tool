@@ -80,27 +80,7 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Calculate overall statistics
-    const totalFiles = await prisma.file_uploads.count();
-    const totalWebsites = await prisma.websites.count();
-    const totalMessagesSent = await prisma.websites.count({
-      where: {
-        sentMessage: {
-          not: null
-        },
-        messageStatus: 'SENT'
-      }
-    });
-
-    return NextResponse.json({ 
-      reports,
-      statistics: {
-        totalUsers: users.length,
-        totalFiles,
-        totalWebsites,
-        totalMessagesSent
-      }
-    });
+    return NextResponse.json({ reports });
   } catch (error) {
     console.error('Error fetching admin reports:', error);
     return NextResponse.json(

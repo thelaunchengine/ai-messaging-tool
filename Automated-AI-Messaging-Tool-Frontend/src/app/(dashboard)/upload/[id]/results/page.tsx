@@ -32,7 +32,9 @@ import {
   FormControl,
   InputLabel,
   Select,
-  MenuItem
+  MenuItem,
+  Pagination,
+  TablePagination
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
@@ -81,6 +83,20 @@ const ResultsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalWebsites, setTotalWebsites] = useState(0);
+  const [websitesPerPage, setWebsitesPerPage] = useState(50);
+  
+  // Overall statistics state
+  const [statistics, setStatistics] = useState({
+    totalWebsites: 0,
+    scrapedSuccessfully: 0,
+    failed: 0,
+    contactFormsSubmitted: 0
+  });
 
   // AI Message Generation State
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
@@ -91,19 +107,25 @@ const ResultsPage = () => {
   const [generatedMessage, setGeneratedMessage] = useState<string>('');
   const [generationError, setGenerationError] = useState<string | null>(null);
 
-  const fetchWebsites = async () => {
+  const fetchWebsites = async (page: number = currentPage, limit: number = websitesPerPage) => {
     try {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`/api/upload/${fileUploadId}/websites`, {
+      const response = await fetch(`/api/upload/${fileUploadId}/websites?page=${page}&limit=${limit}`, {
         credentials: 'include'
       });
 
       if (response.ok) {
         const data = await response.json();
-        // API now sorts by updatedAt DESC by default, so we can use the data as-is
         setWebsites(data.websites || []);
+        setTotalPages(data.pagination?.pages || 1);
+        setTotalWebsites(data.pagination?.total || 0);
+        
+        // Set overall statistics
+        if (data.statistics) {
+          setStatistics(data.statistics);
+        }
       } else {
         setError('Failed to fetch website results');
       }
@@ -120,6 +142,19 @@ const ResultsPage = () => {
       fetchWebsites();
     }
   }, [fileUploadId]);
+
+  // Pagination handlers
+  const handlePageChange = (event: React.ChangeEvent<unknown>, page: number) => {
+    setCurrentPage(page);
+    fetchWebsites(page, websitesPerPage);
+  };
+
+  const handlePerPageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const newPerPage = parseInt(event.target.value);
+    setWebsitesPerPage(newPerPage);
+    setCurrentPage(1);
+    fetchWebsites(1, newPerPage);
+  };
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -361,7 +396,7 @@ const ResultsPage = () => {
                 <Typography color="textSecondary" gutterBottom>
                   Total Websites
                 </Typography>
-                <Typography variant="h4">{websites.length}</Typography>
+                <Typography variant="h4">{statistics.totalWebsites.toLocaleString()}</Typography>
               </CardContent>
             </Card>
           </Grid>
@@ -371,7 +406,7 @@ const ResultsPage = () => {
                 <Typography color="textSecondary" gutterBottom>
                   Scraped Successfully
                 </Typography>
-                <Typography variant="h4">{websites.filter((w) => w.scrapingStatus === 'COMPLETED').length}</Typography>
+                <Typography variant="h4">{statistics.scrapedSuccessfully.toLocaleString()}</Typography>
               </CardContent>
             </Card>
           </Grid>
@@ -383,7 +418,7 @@ const ResultsPage = () => {
                   Failed
                 </Typography>
                 <Typography variant="h4">
-                  {websites.filter((w) => w.scrapingStatus === 'FAILED' || w.messageStatus === 'FAILED').length}
+                  {statistics.failed.toLocaleString()}
                 </Typography>
               </CardContent>
             </Card>
@@ -396,12 +431,47 @@ const ResultsPage = () => {
                   Contact Forms Submitted
                 </Typography>
                 <Typography variant="h4">
-                  {websites.filter((w) => w.submissionStatus === 'SUCCESS').length}
+                  {statistics.contactFormsSubmitted.toLocaleString()}
                 </Typography>
               </CardContent>
             </Card>
           </Grid>
         </Grid>
+
+        {/* Pagination Controls */}
+        {totalWebsites > 0 && (
+          <Box sx={{ p: 2, border: '1px solid #e0e0e0', borderRadius: 1, mb: 2 }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                Showing {websites.length} of {totalWebsites.toLocaleString()} websites
+              </Typography>
+              <Stack direction="row" alignItems="center" spacing={2}>
+                <FormControl size="small" sx={{ minWidth: 120 }}>
+                  <InputLabel>Per Page</InputLabel>
+                  <Select
+                    value={websitesPerPage}
+                    label="Per Page"
+                    onChange={handlePerPageChange}
+                  >
+                    <MenuItem value={25}>25</MenuItem>
+                    <MenuItem value={50}>50</MenuItem>
+                    <MenuItem value={100}>100</MenuItem>
+                    <MenuItem value={200}>200</MenuItem>
+                  </Select>
+                </FormControl>
+                <Pagination
+                  count={totalPages}
+                  page={currentPage}
+                  onChange={handlePageChange}
+                  color="primary"
+                  size="small"
+                  showFirstButton
+                  showLastButton
+                />
+              </Stack>
+            </Stack>
+          </Box>
+        )}
 
         {websites.length === 0 ? (
           <Box sx={{ p: 4, textAlign: 'center' }}>
@@ -598,13 +668,13 @@ const ResultsPage = () => {
                             )}
                             
                             {/* Submitted Form Fields */}
-                            {website.submittedFormFields && (
+                            {website.submittedFormFields ? (
                               <Box>
                                 <Typography variant="body2" color="text.secondary" gutterBottom>
                                   Submitted Fields:
                                 </Typography>
                                 <Box sx={{ 
-                                  backgroundColor: 'grey.50', 
+                                  backgroundColor: 'success.light', 
                                   p: 1, 
                                   borderRadius: 1,
                                   fontFamily: 'monospace',
@@ -615,10 +685,24 @@ const ResultsPage = () => {
                                   </pre>
                                 </Box>
                               </Box>
+                            ) : website.submissionStatus === 'FAILED' && (
+                              <Box>
+                                <Typography variant="body2" color="text.secondary" gutterBottom>
+                                  Submitted Fields:
+                                </Typography>
+                                <Typography variant="body2" color="error.main" sx={{ 
+                                  backgroundColor: 'error.light', 
+                                  p: 1, 
+                                  borderRadius: 1,
+                                  fontStyle: 'italic'
+                                }}>
+                                  No fields submitted - Form submission failed
+                                </Typography>
+                              </Box>
                             )}
                             
                             {/* Submission Response */}
-                            {website.responseContent && (
+                            {website.submissionResponse && (
                               <Box>
                                 <Typography variant="body2" color="text.secondary" gutterBottom>
                                   Submission Response:
@@ -629,20 +713,20 @@ const ResultsPage = () => {
                                   borderRadius: 1,
                                   fontFamily: 'monospace'
                                 }}>
-                                  {website.responseContent}
+                                  {website.submissionResponse}
                                 </Typography>
                               </Box>
                             )}
                             
                             {/* Error Message */}
-                            {website.errorMessage && (
+                            {website.submissionError && (
                               <Box>
                                 <Typography variant="body2" color="text.secondary" gutterBottom>
                                   Error:
                                 </Typography>
                                 <Alert severity="error" sx={{ py: 0 }}>
                                   <Typography variant="body2">
-                                    {website.errorMessage}
+                                    {website.submissionError}
                                   </Typography>
                                 </Alert>
                               </Box>
@@ -677,6 +761,26 @@ const ResultsPage = () => {
               </Accordion>
             ))}
           </Stack>
+        )}
+
+        {/* Bottom Pagination Controls */}
+        {totalWebsites > 0 && totalPages > 1 && (
+          <Box sx={{ p: 2, border: '1px solid #e0e0e0', borderRadius: 1, mt: 2 }}>
+            <Stack direction="row" justifyContent="center" alignItems="center" spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                Page {currentPage} of {totalPages}
+              </Typography>
+              <Pagination
+                count={totalPages}
+                page={currentPage}
+                onChange={handlePageChange}
+                color="primary"
+                size="small"
+                showFirstButton
+                showLastButton
+              />
+            </Stack>
+          </Box>
         )}
       </MainCard>
 

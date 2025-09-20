@@ -175,19 +175,30 @@ class GeminiMessageGenerator:
                 Business Type: {businessType}
                 About Us: {aboutUsContent}
 
+                CRITICAL: Analyze the "About Us" content carefully to understand what this business actually does. 
+                Don't just use the industry field - look at the actual content to determine their real business focus.
+
                 Write a professional business outreach message that:
                 1. Uses {company_name} as the actual company name (not [Company Name])
-                2. References their {industry} industry and {businessType} business type
-                3. Is professional, courteous, and outreach-focused
-                4. Encourages scheduling appointments or meetings to discuss services
-                5. Has a clear call to action focused on collaboration opportunities
-                6. Is 3-4 paragraphs maximum
-                7. Is COMPLETE and ready to send - NO [Your Name], NO [Your Company], NO placeholders
-                8. Sounds like a real business professional writing to them
-                9. Emphasizes the value of meeting to discuss potential partnerships or services
-                10. Maintains a tone that encourages response and engagement
+                2. References their ACTUAL business based on the About Us content, not just the industry field
+                3. Shows you understand what they actually do (real estate, insurance, automotive, etc.)
+                4. Is professional, courteous, and outreach-focused
+                5. Encourages scheduling appointments or meetings to discuss relevant services
+                6. Has a clear call to action focused on collaboration opportunities
+                7. Is 3-4 paragraphs maximum
+                8. Is COMPLETE and ready to send - NO [Your Name], NO [Your Company], NO placeholders
+                9. Sounds like a real business professional writing to them
+                10. Emphasizes the value of meeting to discuss potential partnerships or services
+                11. Maintains a tone that encourages response and engagement
+                12. References specific aspects of their business from the About Us content
 
-                IMPORTANT: Keep the message under 500 characters total. Focus on being concise yet professional.
+                IMPORTANT: 
+                - Keep the message under 500 characters total
+                - Focus on being concise yet professional
+                - Make sure the message is relevant to their ACTUAL business, not just the industry field
+                - If they're in real estate, talk about real estate services
+                - If they're in insurance, talk about insurance-related services
+                - If they're in automotive, talk about automotive services
 
                 Write the entire message as if you are actually sending it. Make up realistic details for the sender but keep it professional and business-focused.
                 """,
@@ -265,17 +276,25 @@ class GeminiMessageGenerator:
             return "", 0.0
     
     def hybrid_message_generation(self, website_data: Dict, message_type: str) -> Dict[str, Any]:
-        """Generate message using both AI and predefined templates"""
+        """Generate message using both AI and predefined templates with improved content analysis"""
         
-        # Get relevant predefined messages
-        predefined_messages = self.predefined_integration.get_relevant_predefined_messages(website_data)
+        # First analyze the business content to get accurate industry and business type
+        actual_industry, actual_business_type = self._analyze_business_content(website_data)
+        
+        # Update website_data with analyzed content
+        enhanced_website_data = website_data.copy()
+        enhanced_website_data['industry'] = actual_industry
+        enhanced_website_data['businessType'] = actual_business_type
+        
+        # Get relevant predefined messages based on analyzed content
+        predefined_messages = self.predefined_integration.get_relevant_predefined_messages(enhanced_website_data)
         
         if predefined_messages:
             # Use predefined message as base and customize with AI
-            base_message = self.predefined_integration.select_best_predefined_message(predefined_messages, website_data)
+            base_message = self.predefined_integration.select_best_predefined_message(predefined_messages, enhanced_website_data)
             
             if base_message:
-                customized_message = self.predefined_integration.customize_with_ai(base_message, website_data, self)
+                customized_message = self.predefined_integration.customize_with_ai(base_message, enhanced_website_data, self)
                 
                 # Update usage count
                 self.predefined_integration.update_usage_count(base_message['id'])
@@ -286,12 +305,12 @@ class GeminiMessageGenerator:
                     'method': 'hybrid',
                     'base_predefined_message': base_message['id'],
                     'customization_level': 'high',
-                    'confidence_score': self._calculate_confidence_score(customized_message, website_data)
+                    'confidence_score': self._calculate_confidence_score(customized_message, enhanced_website_data)
                 }
         
-        # Fallback to pure AI generation
+        # Fallback to pure AI generation with analyzed content
         try:
-            message, confidence = self.generate_pure_ai_message(website_data, message_type)
+            message, confidence = self.generate_pure_ai_message(enhanced_website_data, message_type)
             
             return {
                 'success': True,
@@ -313,15 +332,18 @@ class GeminiMessageGenerator:
             }
     
     def generate_pure_ai_message(self, website_data: Dict, message_type: str) -> Tuple[str, float]:
-        """Generate message using pure AI approach"""
+        """Generate message using pure AI approach with improved content analysis"""
+        
+        # Analyze the actual business content to determine real industry and business type
+        actual_industry, actual_business_type = self._analyze_business_content(website_data)
         
         template = self.message_templates.get(message_type, self.message_templates['general'])
         
         prompt = template['prompt'].format(
             company_name=website_data.get('companyName', ''),
-            industry=website_data.get('industry', ''),
-            businessType=website_data.get('businessType', ''),
-            aboutUsContent=website_data.get('aboutUsContent', '')[:500]
+            industry=actual_industry,  # Use analyzed industry
+            businessType=actual_business_type,  # Use analyzed business type
+            aboutUsContent=website_data.get('aboutUsContent', '')[:800]  # Use more content
         )
         
         try:
@@ -365,6 +387,67 @@ class GeminiMessageGenerator:
         except Exception as e:
             logger.error(f"Error generating message with predefined examples: {e}")
             return self.generate_pure_ai_message(website_data, message_type)
+    
+    def _analyze_business_content(self, website_data: Dict) -> Tuple[str, str]:
+        """Analyze actual business content to determine real industry and business type"""
+        
+        company_name = website_data.get('companyName', '')
+        about_us_content = website_data.get('aboutUsContent', '')
+        website_url = website_data.get('websiteUrl', '')
+        
+        # Create analysis prompt for Gemini
+        analysis_prompt = f"""
+        Analyze this business and determine their ACTUAL industry and business type based on the content provided.
+        
+        Company Name: {company_name}
+        Website URL: {website_url}
+        About Us Content: {about_us_content[:1000]}
+        
+        Based on the actual content, determine:
+        1. What industry does this business actually operate in?
+        2. What type of business is this?
+        
+        Look for keywords and context clues in the content, not just the company name.
+        
+        Return your analysis in this exact JSON format:
+        {{
+            "actual_industry": "the real industry they operate in",
+            "actual_business_type": "the real type of business they are",
+            "confidence": 0.0-1.0,
+            "reasoning": "brief explanation of why you determined this"
+        }}
+        
+        Examples:
+        - If it's a real estate company, industry should be "Real Estate" not "Automotive"
+        - If it's an insurance company, industry should be "Insurance" not "Automotive"
+        - If it's a car dealership, industry should be "Automotive"
+        - If it's a property management company, business_type should be "Property Management"
+        """
+        
+        try:
+            response = self.model.generate_content(analysis_prompt)
+            analysis_text = response.text
+            
+            # Extract JSON from response
+            import json
+            import re
+            
+            # Find JSON in the response
+            json_match = re.search(r'\{.*\}', analysis_text, re.DOTALL)
+            if json_match:
+                analysis_data = json.loads(json_match.group())
+                actual_industry = analysis_data.get('actual_industry', website_data.get('industry', 'Business'))
+                actual_business_type = analysis_data.get('actual_business_type', website_data.get('businessType', 'Business'))
+                
+                logger.info(f"Business analysis for {company_name}: {actual_industry} - {actual_business_type}")
+                return actual_industry, actual_business_type
+            else:
+                logger.warning(f"Could not parse business analysis JSON for {company_name}")
+                return website_data.get('industry', 'Business'), website_data.get('businessType', 'Business')
+                
+        except Exception as e:
+            logger.error(f"Error analyzing business content for {company_name}: {e}")
+            return website_data.get('industry', 'Business'), website_data.get('businessType', 'Business')
     
     def _calculate_confidence_score(self, message: str, context_data: Dict) -> float:
         """Calculate confidence score for generated message"""

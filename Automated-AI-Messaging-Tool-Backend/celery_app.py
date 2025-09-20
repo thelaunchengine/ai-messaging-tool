@@ -34,6 +34,8 @@ celery_app.conf.update(
         'celery_tasks.scraping_tasks.*': {'queue': 'scraping'},
         'celery_tasks.file_tasks.*': {'queue': 'file_processing'},
         'celery_tasks.ai_tasks.*': {'queue': 'ai_processing'},
+        'celery_tasks.form_submission_tasks.*': {'queue': 'form_submission'},
+        'celery_tasks.ultra_fast_form_submission.*': {'queue': 'form_submission'},
     },
     task_default_queue='default',
     task_default_exchange='default',
@@ -47,6 +49,7 @@ celery_app.conf.result_backend = os.getenv('REDIS_URL', 'redis://localhost:6379/
 import celery_tasks.scraping_tasks
 import celery_tasks.file_tasks
 import celery_tasks.form_submission_tasks
+import celery_tasks.ultra_fast_form_submission
 
 if __name__ == '__main__':
     celery_app.start() 

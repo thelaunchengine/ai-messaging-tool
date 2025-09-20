@@ -26,26 +26,13 @@ export async function POST(request: NextRequest) {
     // Append the blob to FormData with filename
     formData.append('file', blob, body.filename);
     
-    // Forward the request to the backend on port 8001 using the new JSON endpoint
-    const backendUrl = process.env.PYTHON_API_URL || 'http://production-ai-messaging-alb-746376383.us-east-1.elb.amazonaws.com:8001';
+    // Forward the request to the backend on port 8001
+    const backendUrl = process.env.PYTHON_API_URL || 'http://98.85.16.204:8001';
     const userId = body.userId || 'cmdi7lqnj0000sbp8h98vwlco'; // Default test user if not provided
     
-    // Prepare JSON payload for the new endpoint
-    const jsonPayload = {
-      filename: body.filename,
-      originalName: body.originalName,
-      fileSize: body.fileSize,
-      fileType: body.fileType,
-      content: body.content,
-      userId: userId
-    };
-    
-    const backendResponse = await fetch(`${backendUrl}/api/upload`, {
+    const backendResponse = await fetch(`${backendUrl}/api/upload-from-frontend?userId=${userId}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(jsonPayload)
+      body: formData
     });
 
     // Get the response from backend
@@ -66,7 +53,7 @@ export async function POST(request: NextRequest) {
 const prisma = new PrismaClient({
   datasources: {
     db: {
-      url: process.env.DATABASE_URL || 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
+      url: 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging'
     }
   }
 });

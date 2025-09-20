@@ -50,17 +50,24 @@ export async function GET(request: NextRequest) {
     
     console.log('All file uploads (basic):', allFileUploads);
     
-    // Get file uploads with user data, handling cases where user might not exist
+    // Check if users exist for these file uploads
+    const userIds = allFileUploads.map(f => f.userId);
+    const users = await prisma.users.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, name: true, email: true }
+    });
+    
+    console.log('Users found:', users);
+    
     const fileUploads = await prisma.file_uploads.findMany({
-      select: {
-        id: true,
-        userId: true,
-        originalName: true,
-        fileSize: true,
-        status: true,
-        totalWebsites: true,
-        createdAt: true,
-        updatedAt: true,
+      include: {
+        users: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
         websites: {
           select: {
             id: true,
@@ -73,15 +80,6 @@ export async function GET(request: NextRequest) {
       take: 5 // Limit to 5 for debugging
     });
 
-    // Get user data separately to handle missing relationships
-    const userIds = fileUploads.map(f => f.userId);
-    const users = await prisma.users.findMany({
-      where: { id: { in: userIds } },
-      select: { id: true, name: true, email: true }
-    });
-
-    const userMap = new Map(users.map(u => [u.id, u]));
-
     console.log('Raw file uploads with relations:', JSON.stringify(fileUploads, null, 2));
 
     console.log('File uploads found:', fileUploads.length);
@@ -92,13 +90,11 @@ export async function GET(request: NextRequest) {
       const failedWebsites = upload.websites.filter(w => w.scrapingStatus === 'FAILED').length;
       const messagesSent = upload.websites.filter(w => w.messageStatus === 'SENT').length;
       
-      const user = userMap.get(upload.userId);
-      
       return {
         id: upload.id,
         fileName: upload.originalName,
-        userName: user?.name || 'Unknown User',
-        userEmail: user?.email || 'Unknown Email',
+        userName: upload.users?.name || 'Unknown User',
+        userEmail: upload.users?.email || 'Unknown Email',
         fileSize: upload.fileSize || 'Unknown',
         fileType: upload.originalName?.split('.').pop()?.toUpperCase() || 'Unknown',
         uploadDate: upload.createdAt,

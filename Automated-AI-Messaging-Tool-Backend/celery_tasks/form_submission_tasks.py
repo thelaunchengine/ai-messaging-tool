@@ -10,6 +10,13 @@ from typing import List, Dict, Any, Optional
 from database.database_manager import DatabaseManager
 import os
 import random
+import json
+
+# Import AI-powered form detection
+from hybrid_form_detector import HybridFormDetector, DetectionResult
+from ai_form_analyzer import AIFormAnalyzer
+from celery_tasks.simple_form_submission import SimpleFormSubmitter
+from ai_services.intelligent_form_submitter import IntelligentFormSubmitter
 
 logger = logging.getLogger(__name__)
 
@@ -17,15 +24,79 @@ class ContactFormSubmitter:
     """Contact form submission using Selenium automation"""
     
     def __init__(self):
-        self.chrome_options = self._setup_chrome_options()
         self.user_config = self._get_user_config()
+        self.hybrid_detector = HybridFormDetector()
+        self.ai_analyzer = AIFormAnalyzer()
+        self.simple_submitter = SimpleFormSubmitter()
+        self.intelligent_submitter = IntelligentFormSubmitter()
     
-    def _setup_chrome_options(self):
-        """Setup Chrome options for automation"""
+    def _setup_firefox_options(self):
+        """Setup Firefox options for automation"""
+        from selenium import webdriver
+        from selenium.webdriver.firefox.options import Options
+        from selenium.webdriver.firefox.service import Service
         import tempfile
         import os
+        import uuid
+        import time
+
+        options = Options()
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        
+        # Create a unique profile directory for this instance
+        unique_id = str(uuid.uuid4())[:8]
+        timestamp = str(int(time.time() * 1000))
+        profile_dir = tempfile.mkdtemp(prefix=f'firefox_selenium_{unique_id}_{timestamp}_')
+        
+        # Set profile directory
+        options.add_argument(f'--profile={profile_dir}')
+        
+        # Additional Firefox-specific options
+        options.add_argument('--disable-gpu')
+        options.add_argument('--disable-extensions')
+        options.add_argument('--disable-plugins')
+        options.add_argument('--disable-images')
+        # Enable JavaScript for dynamic forms
+        # options.add_argument('--disable-javascript')  # Commented out to allow JS
+        options.add_argument('--disable-web-security')
+        options.add_argument('--allow-running-insecure-content')
+        
+        # Memory and process isolation
+        options.add_argument('--disable-background-networking')
+        options.add_argument('--disable-default-apps')
+        options.add_argument('--disable-sync')
+        
+        # Marionette port fixes
+        options.set_preference("marionette.enabled", True)
+        options.set_preference("marionette.port", 0)  # Let Firefox choose port
+        options.set_preference("marionette.logging", "fatal")
+        options.set_preference("browser.cache.disk.enable", False)
+        options.set_preference("browser.cache.memory.enable", False)
+        options.set_preference("browser.cache.offline.enable", False)
+        options.set_preference("network.http.use-cache", False)
+        
+        # Set user agent
+        options.set_preference("general.useragent.override", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0")
+        
+        # Additional Firefox preferences
+        options.set_preference("dom.webdriver.enabled", False)
+        options.set_preference("useAutomationExtension", False)
+        
+        # Enable JavaScript
+        options.set_preference("javascript.enabled", True)
+        
+        return options, profile_dir
+
+    def _setup_chrome_options(self):
+        """Setup Chrome options for automation (fallback)"""
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
+        import tempfile
+        import uuid
+        import time
+        import os
         
         options = Options()
         options.add_argument('--headless')
@@ -36,20 +107,65 @@ class ContactFormSubmitter:
         options.add_experimental_option('useAutomationExtension', False)
         options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
         
-        # Create unique user data directory to prevent conflicts
-        temp_dir = tempfile.mkdtemp(prefix='chrome_selenium_')
-        options.add_argument(f'--user-data-dir={temp_dir}')
+        # Set Chrome binary location
+        chrome_binary_paths = [
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+            '/opt/google/chrome/google-chrome',
+            '/usr/bin/chromium-browser'
+        ]
+        
+        for path in chrome_binary_paths:
+            if os.path.exists(path):
+                options.binary_location = path
+                logger.info(f"Using Chrome binary at: {path}")
+                break
+        else:
+            logger.warning("Chrome binary not found in expected locations")
+        
+        # Create unique profile directory to avoid conflicts between workers
+        unique_id = str(uuid.uuid4())[:8]
+        timestamp = str(int(time.time() * 1000))
+        profile_dir = tempfile.mkdtemp(prefix=f'chrome_selenium_{unique_id}_{timestamp}_')
+        options.add_argument(f'--user-data-dir={profile_dir}')
         
         # Additional stability options
         options.add_argument('--disable-extensions')
         options.add_argument('--disable-plugins')
         options.add_argument('--disable-images')
-        options.add_argument('--disable-javascript')
+        # Enable JavaScript for dynamic forms
+        # options.add_argument('--disable-javascript')  # Commented out to allow JS
         options.add_argument('--disable-web-security')
         options.add_argument('--allow-running-insecure-content')
         options.add_argument('--disable-features=VizDisplayCompositor')
         
-        return options
+        # Additional options to prevent conflicts
+        options.add_argument('--disable-background-timer-throttling')
+        options.add_argument('--disable-backgrounding-occluded-windows')
+        options.add_argument('--disable-renderer-backgrounding')
+        options.add_argument('--disable-features=TranslateUI')
+        options.add_argument('--disable-ipc-flooding-protection')
+        
+        # Memory and process isolation
+        options.add_argument('--disable-gpu')
+        options.add_argument('--disable-software-rasterizer')
+        options.add_argument('--disable-background-networking')
+        options.add_argument('--disable-default-apps')
+        options.add_argument('--disable-sync')
+        
+        # Additional isolation options
+        options.add_argument('--disable-hang-monitor')
+        options.add_argument('--disable-prompt-on-repost')
+        options.add_argument('--disable-domain-reliability')
+        options.add_argument('--disable-component-extensions-with-background-pages')
+        
+        # Process isolation
+        options.add_argument('--single-process')
+        options.add_argument('--disable-background-timer-throttling')
+        options.add_argument('--disable-backgrounding-occluded-windows')
+        options.add_argument('--disable-renderer-backgrounding')
+        
+        return options, profile_dir
     
     def _get_user_config(self):
         """Get user configuration for form submission"""
@@ -63,101 +179,174 @@ class ContactFormSubmitter:
     
     def detect_contact_form_fields(self, form_url: str) -> Dict[str, Any]:
         """
-        Detect and map contact form fields using Selenium
+        Detect and map contact form fields using hybrid AI + traditional approach
         """
         driver = None
-        temp_dir = None
+        profile_dir = None
         try:
-            # Get the temporary directory from Chrome options
-            for arg in self.chrome_options.arguments:
-                if arg.startswith('--user-data-dir='):
-                    temp_dir = arg.split('=', 1)[1]
-                    break
-            
-            from selenium import webdriver
-            from selenium.webdriver.common.by import By
-            from selenium.webdriver.support.ui import WebDriverWait
-            from selenium.webdriver.support import expected_conditions as EC
-            
-            driver = webdriver.Chrome(options=self.chrome_options)
-            driver.get(form_url)
-            
-            # Wait for page to load
-            time.sleep(3)
-            
-            # Find form elements
+            # Try Firefox first (more stable)
             try:
-                form = driver.find_element(By.TAG_NAME, "form")
-                logger.info(f"✅ Found form element on {form_url}")
-            except Exception as form_error:
-                logger.error(f"❌ No form element found on {form_url}: {form_error}")
-                # Try alternative form detection methods
+                logger.info(f"🔥 Attempting Firefox for form detection: {form_url}")
+                firefox_options, profile_dir = self._setup_firefox_options()
+                
+                from selenium import webdriver
+                from selenium.webdriver.firefox.service import Service
+                from selenium.webdriver.common.by import By
+                from selenium.webdriver.support.ui import WebDriverWait
+                from selenium.webdriver.support import expected_conditions as EC
+            
+                # Create Firefox driver with improved service configuration
+                service = Service(
+                    executable_path='/usr/local/bin/geckodriver',
+                    log_path='/tmp/geckodriver.log'
+                )
+                driver = webdriver.Firefox(service=service, options=firefox_options)
+                
+                # Set timeouts for better stability
+                driver.set_page_load_timeout(30)
+                driver.implicitly_wait(10)
+
+                # Set timeouts
+                driver.set_page_load_timeout(30)
+                driver.implicitly_wait(10)
+
+                driver.get(form_url)
+
+                # Wait for page to load with better error handling
                 try:
-                    # Look for forms with different selectors
-                    form_selectors = [
-                        "form[action*='contact']",
-                        "form[action*='submit']",
-                        "form[action*='send']",
-                        "div[class*='contact-form']",
-                        "div[class*='contactform']"
-                    ]
-                    
-                    for selector in form_selectors:
-                        try:
-                            form = driver.find_element(By.CSS_SELECTOR, selector)
-                            logger.info(f"✅ Found alternative form element using selector: {selector}")
-                            break
-                        except:
-                            continue
-                    else:
-                        logger.error(f"❌ No form element found using any selector on {form_url}")
-                        return None
-                except Exception as alt_error:
-                    logger.error(f"❌ Alternative form detection also failed: {alt_error}")
+                    WebDriverWait(driver, 10).until(
+                        lambda d: d.execute_script("return document.readyState") == "complete"
+                    )
+                except Exception as timeout_error:
+                    logger.warning(f"Page load timeout for {form_url}, continuing anyway: {timeout_error}")
+
+                # Additional wait for dynamic content
+                time.sleep(2)
+
+                # Use hybrid detection system
+                logger.info(f"🔍 Starting hybrid form detection for {form_url}")
+                detection_result = self.hybrid_detector.detect_contact_form(form_url, driver)
+
+                if not detection_result.success:
+                    logger.error(f"❌ Hybrid form detection failed for {form_url}: {detection_result.error_message}")
                     return None
             
-            # Map form fields with detailed logging
-            logger.info(f"🔍 Detecting form fields on {form_url}")
-            field_mapping = {
-                'name': self._detect_name_field(driver),
-                'email': self._detect_email_field(driver),
-                'phone': self._detect_phone_field(driver),
-                'subject': self._detect_subject_field(driver),
-                'message': self._detect_message_field(driver),
-                'company': self._detect_company_field(driver)
-            }
-            
-            # Log field detection results
-            detected_fields = {k: v for k, v in field_mapping.items() if v is not None}
-            logger.info(f"📝 Detected form fields: {list(detected_fields.keys())}")
-            if not detected_fields:
-                logger.warning(f"⚠️ No form fields detected on {form_url}")
-            
+                logger.info(f"✅ Form detection successful using {detection_result.method_used} method")
+                logger.info(f"📊 Detection confidence: {detection_result.confidence_score:.2f}")
+                logger.info(f"⏱️ Detection time: {detection_result.detection_time:.2f}s")
+
+                # Convert detection result to expected format
+                result = {
+                    'form_element': detection_result.form_data.get('form_element'),
+                    'field_mapping': detection_result.field_mappings,
+                    'form_action': detection_result.form_data.get('form_action', ''),
+                    'form_method': detection_result.form_data.get('form_method', 'POST'),
+                    'form_url': form_url,
+                    'detection_method': detection_result.method_used,
+                    'confidence_score': detection_result.confidence_score,
+                    'submission_strategy': detection_result.submission_strategy
+                }
+
+                driver.quit()
+                return result
+
+            except Exception as firefox_error:
+                logger.warning(f"Firefox failed, trying Chrome fallback: {firefox_error}")
+                if driver:
+                    driver.quit()
+                    driver = None
+
+                # Fallback to Chrome
+                logger.info(f"🌐 Attempting Chrome fallback for form detection: {form_url}")
+                chrome_options, chrome_profile_dir = self._setup_chrome_options()
+
+                from selenium import webdriver
+                from selenium.webdriver.common.by import By
+                from selenium.webdriver.support.ui import WebDriverWait
+                from selenium.webdriver.support import expected_conditions as EC
+
+                driver = webdriver.Chrome(options=chrome_options)
+
+                # Set timeouts
+                driver.set_page_load_timeout(30)
+                driver.implicitly_wait(10)
+
+                driver.get(form_url)
+
+                # Wait for page to load with better error handling
+                try:
+                    WebDriverWait(driver, 10).until(
+                        lambda d: d.execute_script("return document.readyState") == "complete"
+                    )
+                except Exception as timeout_error:
+                    logger.warning(f"Page load timeout for {form_url}, continuing anyway: {timeout_error}")
+
+                # Additional wait for dynamic content
+                time.sleep(2)
+
+                # Use hybrid detection system
+                logger.info(f"🔍 Starting hybrid form detection for {form_url}")
+                detection_result = self.hybrid_detector.detect_contact_form(form_url, driver)
+
+                if not detection_result.success:
+                    logger.error(f"❌ Hybrid form detection failed for {form_url}: {detection_result.error_message}")
+                    return None
+
+                logger.info(f"✅ Form detection successful using {detection_result.method_used} method")
+                logger.info(f"📊 Detection confidence: {detection_result.confidence_score:.2f}")
+                logger.info(f"⏱️ Detection time: {detection_result.detection_time:.2f}s")
+
+                # Convert detection result to expected format
             result = {
-                'form_element': form,
-                'field_mapping': field_mapping,
-                'form_action': form.get_attribute('action'),
-                'form_method': form.get_attribute('method'),
-                'form_url': form_url
+                    'form_element': detection_result.form_data.get('form_element'),
+                    'field_mapping': detection_result.field_mappings,
+                    'form_action': detection_result.form_data.get('form_action', ''),
+                    'form_method': detection_result.form_data.get('form_method', 'POST'),
+                    'form_url': form_url,
+                    'detection_method': detection_result.method_used,
+                    'confidence_score': detection_result.confidence_score,
+                    'submission_strategy': detection_result.submission_strategy
             }
             
             driver.quit()
             return result
             
         except Exception as e:
-            logger.error(f"Error detecting form fields: {e}")
+            logger.error(f"Error detecting form fields with Selenium: {e}")
             if driver:
                 driver.quit()
+            
+            # Fallback to simple form detection
+            logger.info(f"🔄 Falling back to simple form detection for {form_url}")
+            try:
+                result = self.simple_submitter.detect_contact_form_fields(form_url)
+                if result:
+                    logger.info(f"✅ Simple form detection successful for {form_url}")
+                    return result
+                else:
+                    logger.error(f"❌ Simple form detection also failed for {form_url}")
+                    return None
+            except Exception as simple_error:
+                logger.error(f"❌ Simple form detection failed: {simple_error}")
             return None
         finally:
-            # Clean up temporary directory
-            if temp_dir and os.path.exists(temp_dir):
+            # Clean up Firefox profile directory
+            if profile_dir and os.path.exists(profile_dir):
                 try:
                     import shutil
-                    shutil.rmtree(temp_dir)
-                    logger.info(f"Cleaned up temporary Chrome directory: {temp_dir}")
+                    shutil.rmtree(profile_dir)
+                    logger.info(f"Cleaned up Firefox profile directory: {profile_dir}")
                 except Exception as cleanup_error:
-                    logger.warning(f"Could not clean up temporary directory {temp_dir}: {cleanup_error}")
+                    logger.warning(f"Could not clean up Firefox profile directory {profile_dir}: {cleanup_error}")
+            
+            # Clean up Chrome profile directory if it exists
+            if 'chrome_profile_dir' in locals() and chrome_profile_dir and os.path.exists(chrome_profile_dir):
+                try:
+                    import shutil
+                    shutil.rmtree(chrome_profile_dir)
+                    logger.info(f"Cleaned up Chrome profile directory: {chrome_profile_dir}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Could not clean up Chrome profile directory {chrome_profile_dir}: {cleanup_error}")
     
     def _detect_name_field(self, driver) -> Optional[str]:
         """Detect name input field"""
@@ -288,25 +477,88 @@ class ContactFormSubmitter:
         
         return None
     
+    def submit_contact_form_intelligent(self, website_data: Dict, generated_message: str) -> Dict[str, Any]:
+        """
+        Submit contact form using AI-powered intelligent approach
+        This is the primary method that adapts to different platforms
+        """
+        try:
+            logger.info(f"🤖 Using AI-powered intelligent form submission for {website_data.get('websiteUrl', 'Unknown')}")
+            
+            # Use the intelligent form submitter
+            result = self.intelligent_submitter.submit_contact_form(website_data, generated_message)
+            
+            # Convert SubmissionResult to expected format
+            return {
+                'success': result.success,
+                'error': result.error_message,
+                'submission_time': result.submission_time,
+                'response_page': result.response_content,
+                'submission_method': result.method_used,
+                'platform_detected': result.platform_detected,
+                'fields_submitted': result.fields_submitted,
+                'confidence_score': result.confidence_score,
+                'form_url': website_data.get('contactFormUrl', '')
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ AI-powered submission failed: {e}")
+            return {
+                'success': False,
+                'error': f"AI-powered submission error: {str(e)}",
+                'submission_time': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'response_page': None,
+                'submission_method': 'ai_error',
+                'platform_detected': None,
+                'fields_submitted': {},
+                'confidence_score': 0.0,
+                'form_url': website_data.get('contactFormUrl', '')
+            }
+    
     def submit_contact_form(self, form_data: Dict, generated_message: str) -> Dict[str, Any]:
         """
         Submit contact form with generated message
         """
         driver = None
-        temp_dir = None
+        profile_dir = None
         try:
-            # Get the temporary directory from Chrome options
-            for arg in self.chrome_options.arguments:
-                if arg.startswith('--user-data-dir='):
-                    temp_dir = arg.split('=', 1)[1]
-                    break
+            # Try Firefox first (more stable)
+            try:
+                logger.info(f"🔥 Attempting Firefox for form submission: {form_data['form_url']}")
+                firefox_options, profile_dir = self._setup_firefox_options()
+                
+                from selenium import webdriver
+                from selenium.webdriver.firefox.service import Service
+                from selenium.webdriver.common.by import By
+                from selenium.webdriver.support.ui import WebDriverWait
+                from selenium.webdriver.support import expected_conditions as EC
             
-            from selenium import webdriver
-            from selenium.webdriver.common.by import By
-            from selenium.webdriver.support.ui import WebDriverWait
-            from selenium.webdriver.support import expected_conditions as EC
-            
-            driver = webdriver.Chrome(options=self.chrome_options)
+                # Create Firefox driver with improved service configuration
+                service = Service(
+                    executable_path='/usr/local/bin/geckodriver',
+                    log_path='/tmp/geckodriver.log'
+                )
+                driver = webdriver.Firefox(service=service, options=firefox_options)
+                
+                # Set timeouts for better stability
+                driver.set_page_load_timeout(30)
+                driver.implicitly_wait(10)
+            except Exception as firefox_error:
+                logger.warning(f"Firefox failed, trying Chrome fallback: {firefox_error}")
+                if driver:
+                    driver.quit()
+                    driver = None
+
+                # Fallback to Chrome
+                logger.info(f"🌐 Attempting Chrome fallback for form submission: {form_data['form_url']}")
+                chrome_options, chrome_profile_dir = self._setup_chrome_options()
+                
+                from selenium import webdriver
+                from selenium.webdriver.common.by import By
+                from selenium.webdriver.support.ui import WebDriverWait
+                from selenium.webdriver.support import expected_conditions as EC
+                
+                driver = webdriver.Chrome(options=chrome_options)
             
             # Navigate to form URL
             driver.get(form_data['form_url'])
@@ -417,24 +669,54 @@ class ContactFormSubmitter:
             return result
             
         except Exception as e:
-            logger.error(f"Error submitting form: {e}")
+            logger.error(f"Error submitting form with Selenium: {e}")
+            selenium_error = str(e)
             if driver:
                 driver.quit()
-            return {
-                'success': False,
-                'error': str(e),
-                'submission_time': datetime.now(),
-                'form_url': form_data.get('form_url', '')
-            }
+            
+            # Fallback to simple form submission
+            logger.info(f"🔄 Falling back to simple form submission for {form_data['form_url']}")
+            try:
+                result = self.simple_submitter.submit_contact_form(form_data, generated_message)
+                if result:
+                    logger.info(f"✅ Simple form submission successful for {form_data['form_url']}")
+                    return result
+                else:
+                    logger.error(f"❌ Simple form submission also failed for {form_data['form_url']}")
+                    return {
+                        'success': False,
+                        'error': f'Selenium failed: {selenium_error}. Simple submission returned no result.',
+                        'submission_time': datetime.now(),
+                        'form_url': form_data.get('form_url', '')
+                    }
+            except Exception as simple_error:
+                logger.error(f"❌ Simple form submission failed: {simple_error}")
+                return {
+                    'success': False,
+                    'error': f"Selenium failed: {str(e)}. Simple submission failed: {str(simple_error)}",
+                    'submission_time': datetime.now(),
+                    'form_url': form_data.get('form_url', '')
+                }
         finally:
-            # Clean up temporary directory
-            if temp_dir and os.path.exists(temp_dir):
+            if driver:
+                driver.quit()
+            # Clean up Firefox profile directory
+            if profile_dir and os.path.exists(profile_dir):
                 try:
                     import shutil
-                    shutil.rmtree(temp_dir)
-                    logger.info(f"Cleaned up temporary Chrome directory: {temp_dir}")
+                    shutil.rmtree(profile_dir)
+                    logger.info(f"Cleaned up Firefox profile directory: {profile_dir}")
                 except Exception as cleanup_error:
-                    logger.warning(f"Could not clean up temporary directory {temp_dir}: {cleanup_error}")
+                    logger.warning(f"Could not clean up Firefox profile directory {profile_dir}: {cleanup_error}")
+            
+            # Clean up Chrome profile directory if it exists
+            if 'chrome_profile_dir' in locals() and chrome_profile_dir and os.path.exists(chrome_profile_dir):
+                try:
+                    import shutil
+                    shutil.rmtree(chrome_profile_dir)
+                    logger.info(f"Cleaned up Chrome profile directory: {chrome_profile_dir}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Could not clean up Chrome profile directory {chrome_profile_dir}: {cleanup_error}")
 
 @celery_app.task(bind=True)
 def contact_form_submission_task(self, websites_with_messages: List[Dict], user_config: Dict = None):
@@ -479,7 +761,8 @@ def contact_form_submission_task(self, websites_with_messages: List[Dict], user_
                     submission_status="SUBMITTED" if submission_result['success'] else "FAILED",
                     submission_time=submission_result['submission_time'],
                     response_content=submission_result.get('response_page', ''),
-                    error_message=submission_result.get('error', '')
+                    error_message=submission_result.get('error', ''),
+                    submitted_form_fields=json.dumps(submission_result.get('fields_submitted', {}))
                 )
                 
                 submission_results.append({
@@ -534,12 +817,15 @@ def contact_form_submission_task(self, websites_with_messages: List[Dict], user_
         raise 
 
 @celery_app.task(bind=True)
-def submit_contact_forms_task(self, websites_with_messages: List[Dict], user_config: Dict = None):
+def submit_contact_forms_task(self, websites_with_messages: List[Dict], message_type: str = "general", fileUploadId: str = None, userId: str = None, user_config: Dict = None):
     """
     Submit contact forms with generated messages - main entry point for automatic triggering
     """
+    # Initialize file_upload_id at the top level to avoid UnboundLocalError
+    file_upload_id = fileUploadId
+    
     try:
-        logger.info(f"🚀 Starting contact form submission task for {len(websites_with_messages)} websites")
+        logger.info(f"🚀 Starting contact form submission task for {len(websites_with_messages)} websites (fileUploadId: {fileUploadId}, userId: {userId})")
         
         # Initialize form submitter and database manager
         submitter = ContactFormSubmitter()
@@ -551,134 +837,79 @@ def submit_contact_forms_task(self, websites_with_messages: List[Dict], user_con
         failed_submissions = 0
         
         # Get file upload ID from the first website for status updates
-        file_upload_id = None
         if websites_with_messages:
             file_upload_id = websites_with_messages[0].get('fileUploadId')
         
-        for i, website in enumerate(websites_with_messages):
+        # Update file upload status to show form submission is starting
+        if file_upload_id:
             try:
+                db_manager.update_file_upload(file_upload_id, {
+                    'status': 'CONTACT_FORM_SUBMISSION_IN_PROGRESS'
+                })
+                logger.info(f"✅ Updated file upload {file_upload_id} status to CONTACT_FORM_SUBMISSION_IN_PROGRESS")
+            except Exception as status_error:
+                logger.error(f"❌ Failed to update file upload status: {status_error}")
+        
+        # ULTRA-FAST MODE: Process all websites in parallel batches
+        from celery_tasks.ultra_fast_form_submission import submit_forms_ultra_fast_task
+        
+        # Use ultra-fast parallel processing instead of sequential
+        logger.info(f"🚀 Using ULTRA-FAST parallel form submission for {len(websites_with_messages)} websites")
+        
+        # Submit to ultra-fast task
+        ultra_fast_task = submit_forms_ultra_fast_task.delay(websites_with_messages, file_upload_id, userId)
+        
+        # Wait for completion and get results
+        try:
+            results = ultra_fast_task.get(timeout=300)  # 5 minute timeout
+            successful_submissions = results.get('successful_submissions', 0)
+            failed_submissions = results.get('failed_submissions', 0)
+            submission_results = results.get('results', [])
+            
+            logger.info(f"🎯 ULTRA-FAST submission completed: {successful_submissions} successful, {failed_submissions} failed")
+            
+        except Exception as e:
+            logger.error(f"❌ Ultra-fast submission failed, falling back to sequential: {e}")
+            # Fallback to original sequential processing
+            for i, website in enumerate(websites_with_messages):
                 # Skip if no contact form URL
                 if not website.get('contactFormUrl'):
                     logger.info(f"Skipping {website.get('websiteUrl', 'Unknown')} - no contact form URL")
                     failed_submissions += 1
                     continue
                 
-                logger.info(f"Processing {website.get('websiteUrl', 'Unknown')} - contact form: {website.get('contactFormUrl')}")
-                
-                # 1. Detect form structure
-                logger.info(f"🔍 Detecting form structure for {website['websiteUrl']} at {website['contactFormUrl']}")
-                form_data = submitter.detect_contact_form_fields(website['contactFormUrl'])
-                
-                if not form_data:
-                    logger.error(f"❌ Form detection FAILED for {website['websiteUrl']} - no form structure detected")
-                    failed_submissions += 1
-                    # Update website status to show form detection failure
-                    try:
+                # Process single website (no retries for speed)
+                try:
+                    logger.info(f"Processing {website.get('websiteUrl', 'Unknown')} - contact form: {website.get('contactFormUrl')}")
+                    
+                    # Use AI-powered intelligent form submission
+                    submission_result = submitter.submit_contact_form_intelligent(
+                        website_data=website,
+                        generated_message=website['generatedMessage']
+                    )
+                    
+                    # Update database
+                    if submission_result.get('success'):
                         db_manager.update_website_submission(
                             website_id=website.get('id'),
-                            submission_status="FORM_DETECTION_FAILED",
-                            submission_time=datetime.now(),
-                            error_message="Could not detect form structure - no form element found"
+                            submission_status="SUBMITTED",
+                            submission_time=submission_result.get('submission_time'),
+                            response_content=submission_result.get('response_page', ''),
+                            submitted_form_fields=json.dumps(submission_result.get('fields_submitted', {}))
                         )
-                    except Exception as update_error:
-                        logger.error(f"Failed to update website submission status: {update_error}")
-                    continue
-                
-                logger.info(f"✅ Form structure detected for {website['websiteUrl']}: {list(form_data.get('field_mapping', {}).keys())}")
-                
-                # 2. Submit form
-                logger.info(f"📝 Submitting contact form for {website['websiteUrl']}")
-                submission_result = submitter.submit_contact_form(
-                    form_data=form_data,
-                    generated_message=website['generatedMessage']
-                )
-                
-                # Log detailed submission result
-                logger.info(f"📊 Form submission result for {website['websiteUrl']}: {submission_result}")
-                
-                # 3. Create contact inquiry record
-                contact_inquiry_id = None
-                if submission_result.get('success'):
-                    try:
-                        contact_inquiry_id = db_manager.create_contact_inquiry(
-                            website_id=website.get('id'),
-                            userId=website.get('userId'),
-                            contactFormUrl=website.get('contactFormUrl'),
-                            submitted_message=website.get('generatedMessage'),
-                            status="SUBMITTED",
-                            response_content=submission_result.get('response_page', '')
-                        )
-                        logger.info(f"✅ Created contact inquiry record: {contact_inquiry_id}")
-                    except Exception as db_error:
-                        logger.error(f"❌ Failed to create contact inquiry record: {db_error}")
-                        # Mark submission as failed due to database error
-                        submission_result['success'] = False
-                        submission_result['error'] = f"Database error: {db_error}"
-                else:
-                    logger.error(f"❌ Form submission FAILED for {website['websiteUrl']}: {submission_result.get('error', 'Unknown error')}")
-                
-                # 4. Update website submission status
-                try:
-                    success = db_manager.update_website_submission(
-                        website_id=website.get('id'),
-                        submission_status="SUBMITTED" if submission_result.get('success') else "FAILED",
-                        submission_time=submission_result.get('submission_time'),
-                        response_content=submission_result.get('response_page', ''),
-                        error_message=submission_result.get('error', '')
-                    )
-                    logger.info(f"✅ Updated website submission status for {website['websiteUrl']}")
-                except Exception as update_error:
-                    logger.error(f"❌ Failed to update website submission status: {update_error}")
-                    # Continue processing but log the error
-                
-                submission_results.append({
-                    'website_id': website.get('id'),
-                    'url': website.get('websiteUrl'),
-                    'contact_form_url': website.get('contactFormUrl'),
-                    'success': submission_result['success'],
-                    'submission_time': submission_result['submission_time'],
-                    'error': submission_result.get('error'),
-                    'contact_inquiry_id': contact_inquiry_id
-                })
-                
-                if submission_result.get('success'):
-                    successful_submissions += 1
-                    logger.info(f"✅ Successfully submitted form for {website.get('websiteUrl')}")
-                else:
-                    failed_submissions += 1
-                    logger.error(f"❌ Failed to submit form for {website.get('websiteUrl')}: {submission_result.get('error', 'Unknown error')}")
-                    
-                    # Update website with detailed error information
-                    try:
+                        successful_submissions += 1
+                    else:
                         db_manager.update_website_submission(
                             website_id=website.get('id'),
                             submission_status="FAILED",
-                            submission_time=datetime.now(),
+                            submission_time=submission_result.get('submission_time'),
                             error_message=submission_result.get('error', 'Unknown error')
                         )
-                    except Exception as update_error:
-                        logger.error(f"Failed to update website error status: {update_error}")
-                
-                # 5. Update progress
-                progress = int((i + 1) / total_websites * 100)
-                self.update_state(
-                    state='PROGRESS',
-                    meta={
-                        'current': i + 1,
-                        'total': total_websites,
-                        'progress': progress,
-                        'successful_submissions': successful_submissions,
-                        'failed_submissions': failed_submissions
-                    }
-                )
-                
-                # Rate limiting
-                time.sleep(random.uniform(2, 5))
-                
-            except Exception as e:
-                failed_submissions += 1
-                logger.error(f"Error submitting form for {website.get('websiteUrl', 'Unknown')}: {e}")
-                continue
+                        failed_submissions += 1
+                        
+                except Exception as e:
+                    logger.error(f"❌ Error processing {website.get('websiteUrl')}: {e}")
+                    failed_submissions += 1
         
         # 6. Update file upload status if we have a file upload ID
         if file_upload_id:

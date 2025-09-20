@@ -12,7 +12,6 @@ import json
 from database.database_manager import DatabaseManager
 import pandas as pd
 from urllib.parse import urlparse
-from services.s3_service import S3Service
 
 logger = logging.getLogger(__name__)
 
@@ -40,27 +39,14 @@ def validate_website_url(url: str) -> bool:
         return False
 
 def parse_csv_file(file_path: str, website_url_column: str = "websiteUrl", contact_form_url_column: str = "contactFormUrl") -> List[Dict]:
-    """Parse CSV file with flexible column detection and mapping - supports both local files and S3 keys"""
+    """Parse CSV file with flexible column detection and mapping"""
     websites = []
     
     try:
-        # Check if file_path is an S3 key (starts with 'uploads/')
-        if file_path.startswith('uploads/'):
-            # Download file from S3
-            s3_service = S3Service()
-            file_content = s3_service.download_file(file_path)
-            if not file_content:
-                raise Exception(f"Failed to download file from S3: {file_path}")
+        with open(file_path, 'r', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
             
-            # Parse CSV from memory
-            content_str = file_content.decode('utf-8')
-            reader = csv.DictReader(content_str.splitlines())
-        else:
-            # Local file
-            with open(file_path, 'r', encoding='utf-8') as file:
-                reader = csv.DictReader(file)
-            
-        for row in reader:
+            for row in reader:
                 # Use provided column mapping with fallback to flexible detection
                 website_url = (
                     row.get(website_url_column) or

@@ -59,7 +59,7 @@ export async function GET(
     // Files are stored on the backend server, not locally
     // Fetch the file from the backend server
     try {
-      const backendUrl = process.env.PYTHON_API_URL || 'http://production-ai-messaging-alb-746376383.us-east-1.elb.amazonaws.com:8001'; // ECS Load Balancer URL
+      const backendUrl = 'http://98.85.16.204:8001'; // Backend server URL
       const fileName = fileUpload.filename.split('/').pop(); // Extract filename from path
       const backendFileUrl = `${backendUrl}/api/download-file/${fileName}`;
       

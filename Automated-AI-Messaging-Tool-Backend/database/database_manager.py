@@ -8,6 +8,12 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import pg8000
 from urllib.parse import urlparse
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -15,10 +21,7 @@ logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self):
-        # Updated to use production database as fallback instead of localhost
-        self.database_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
-        logger.info(f"DatabaseManager initialized with URL: {self.database_url}")
-        logger.info(f"Environment DATABASE_URL: {os.getenv('DATABASE_URL', 'NOT_SET')}")
+        self.database_url = os.getenv('DATABASE_URL', 'postgresql://postgres:cDtrtoOqpdkAzMcLSd%401847@localhost:5432/aimsgdb')
         
         # Parse connection parameters for pg8000
         parsed_url = urlparse(self.database_url)
@@ -38,31 +41,7 @@ class DatabaseManager:
     def _connect(self):
         """Establish database connection"""
         try:
-            # Parse database URL to get connection parameters
-            import ssl
-            from urllib.parse import urlparse
-            
-            database_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
-            parsed_url = urlparse(database_url)
-            
-            # URL decode the password in case it's encoded
-            import urllib.parse
-            password = urllib.parse.unquote(parsed_url.password) if parsed_url.password else parsed_url.password
-            
-            logger.info(f"Connecting with parsed database URL: {parsed_url.hostname}:{parsed_url.port}, user: {parsed_url.username}")
-            
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-            
-            self.conn = pg8000.connect(
-                host=parsed_url.hostname,
-                port=parsed_url.port,
-                user=parsed_url.username,
-                password=password,
-                database=parsed_url.path[1:],  # Remove leading slash
-                ssl_context=ssl_context
-            )
+            self.conn = psycopg2.connect(self.database_url)
             self.cursor = self.conn.cursor()
         except Exception as e:
             logger.error(f"Error connecting to database: {e}")
@@ -78,31 +57,7 @@ class DatabaseManager:
     def get_connection(self):
         """Get database connection"""
         try:
-            # Parse database URL to get connection parameters
-            import ssl
-            from urllib.parse import urlparse
-            
-            database_url = os.getenv('DATABASE_URL', 'postgresql://postgres:AiMessaging2024Secure@production-ai-messaging-db.cmpkwkuqu30h.us-east-1.rds.amazonaws.com:5432/ai_messaging')
-            parsed_url = urlparse(database_url)
-            
-            # URL decode the password in case it's encoded
-            import urllib.parse
-            password = urllib.parse.unquote(parsed_url.password) if parsed_url.password else parsed_url.password
-            
-            logger.info(f"Getting connection with parsed database URL: {parsed_url.hostname}:{parsed_url.port}, user: {parsed_url.username}")
-            
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-            
-            conn = pg8000.connect(
-                host=parsed_url.hostname,
-                port=parsed_url.port,
-                user=parsed_url.username,
-                password=password,
-                database=parsed_url.path[1:],  # Remove leading slash
-                ssl_context=ssl_context
-            )
+            conn = psycopg2.connect(self.database_url)
             return conn
         except Exception as e:
             logger.error(f"Error connecting to database: {e}")
@@ -529,12 +484,28 @@ class DatabaseManager:
             return False
     
     def create_websites_batch(self, website_data_list: List[Dict[str, Any]]) -> bool:
-        """Create multiple website records in batch"""
+        """Create multiple website records in batch with duplicate prevention"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
             
+            created_count = 0
+            skipped_count = 0
+            
             for website_data in website_data_list:
+                # Check if website already exists for this fileUploadId and URL
+                cursor.execute("""
+                    SELECT id FROM websites 
+                    WHERE "fileUploadId" = %s AND "websiteUrl" = %s
+                """, (website_data.get('fileUploadId'), website_data.get('websiteUrl')))
+                
+                existing = cursor.fetchone()
+                
+                if existing:
+                    logger.info(f"Website already exists, skipping: {website_data.get('websiteUrl')}")
+                    skipped_count += 1
+                    continue
+                
                 # Generate a unique website ID
                 website_id = str(uuid.uuid4())
                 
@@ -549,12 +520,13 @@ class DatabaseManager:
                     website_data.get('scrapingStatus', 'PENDING'),
                     website_data.get('messageStatus', 'PENDING')
                 ))
+                created_count += 1
             
             conn.commit()
             cursor.close()
             conn.close()
             
-            logger.info(f"Created {len(website_data_list)} website records in batch")
+            logger.info(f"Created {created_count} new website records, skipped {skipped_count} duplicates")
             return True
             
         except Exception as e:
@@ -754,8 +726,8 @@ class DatabaseManager:
             query = """
                 SELECT id, "userId", "fileUploadId", "websiteUrl", "companyName", "industry", 
                        "businessType", "contactFormUrl", "hasContactForm", "aboutUsContent", 
-                       "scrapingStatus", "messageStatus", "generatedMessage", "createdAt", "updatedAt",
-                       "submissionStatus", "submissionError", "submittedFormFields", "submissionResponse"
+                       "scrapingStatus", "messageStatus", "generatedMessage", "submissionStatus",
+                       "submissionResponse", "submissionError", "submittedFormFields", "createdAt", "updatedAt"
                 FROM websites 
                 WHERE "fileUploadId" = %s
                 ORDER BY "createdAt" DESC
@@ -780,12 +752,12 @@ class DatabaseManager:
                     'scrapingStatus': row[10],
                     'messageStatus': row[11],
                     'generatedMessage': row[12],
-                    'createdAt': row[13].isoformat() if row[13] else None,
-                    'updatedAt': row[14].isoformat() if row[14] else None,
-                    'submissionStatus': row[15],
-                    'submissionError': row[16],
-                    'submittedFormFields': row[17],
-                    'submissionResponse': row[18]
+                    'submissionStatus': row[13] or "PENDING",
+                    'submissionResponse': row[14],
+                    'submissionError': row[15],
+                    'submittedFormFields': row[16],
+                    'createdAt': row[17].isoformat() if row[17] else None,
+                    'updatedAt': row[18].isoformat() if row[18] else None
                 })
             
             cursor.close()
@@ -796,25 +768,61 @@ class DatabaseManager:
             logger.error(f"Error getting websites by file upload ID: {e}")
             return []
 
-    def create_file_upload(self, fileUploadId: str, userId: str, filename: str = None, 
-                          originalName: str = None, fileSize: int = 0, fileType: str = "csv",
-                          status: str = "PENDING", totalWebsites: int = 0, processedWebsites: int = 0,
-                          failedWebsites: int = 0, totalChunks: int = 0, completedChunks: int = 0) -> bool:
-        """Create a file upload record with all required fields and log all values and errors"""
+    def get_next_file_upload_id(self) -> str:
+        """Get the next available file upload ID starting from 1000"""
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
+            
+            # Get the maximum numeric ID from existing uploads
+            cursor.execute("""
+                SELECT MAX(CAST(id AS INTEGER)) 
+                FROM file_uploads 
+                WHERE id ~ '^[0-9]+$'
+            """)
+            result = cursor.fetchone()
+            max_id = result[0] if result[0] else 999
+            
+            # Return next ID (start from 1000)
+            next_id = max(max_id + 1, 1000)
+            
+            cursor.close()
+            conn.close()
+            
+            logger.info(f"Generated next file upload ID: {next_id}")
+            return str(next_id)
+            
+        except Exception as e:
+            logger.error(f"Error getting next file upload ID: {e}")
+            # Fallback to timestamp-based ID
+            import time
+            return str(int(time.time()))
+
+    def create_file_upload(self, fileUploadId: str = None, userId: str = None, filename: str = None, 
+                          originalName: str = None, fileSize: int = 0, fileType: str = "csv",
+                          status: str = "PENDING", totalWebsites: int = 0, processedWebsites: int = 0,
+                          failedWebsites: int = 0, totalChunks: int = 0, completedChunks: int = 0) -> str:
+        """Create a file upload record and return the ID"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # Check if file upload already exists
+            if fileUploadId:
+                cursor.execute("SELECT id FROM file_uploads WHERE id = %s", (fileUploadId,))
+                existing = cursor.fetchone()
+                
+                if existing:
+                    logger.info(f"File upload {fileUploadId} already exists, skipping creation")
+                    cursor.close()
+                    conn.close()
+                    return fileUploadId
+            
             values = (
-                fileUploadId, userId, filename or fileUploadId, originalName or filename or fileUploadId,
+                fileUploadId, userId, filename or "unknown", originalName or filename or "unknown",
                 fileSize, fileType, status, totalWebsites, processedWebsites, failedWebsites, totalChunks, completedChunks
             )
             logger.info(f"Attempting to insert file_upload: {values}")
-            # First check if the record already exists
-            cursor.execute("SELECT id FROM file_uploads WHERE id = %s", (fileUploadId,))
-            if cursor.fetchone():
-                logger.info(f"File upload record already exists: {fileUploadId}")
-                conn.commit()
-                return True
             
             cursor.execute("""
                 INSERT INTO file_uploads (id, "userId", filename, "originalName", "fileSize", "fileType", status, "totalWebsites", "processedWebsites", "failedWebsites", "totalChunks", "completedChunks", "updatedAt")
@@ -826,11 +834,11 @@ class DatabaseManager:
             conn.close()
             
             logger.info(f"Created file upload record: {fileUploadId}")
-            return True
+            return fileUploadId
             
         except Exception as e:
             logger.error(f"Error creating file upload record: {e}. Values: {values}")
-            return False
+            return None
     
     def get_all_file_uploads(self) -> List[Dict[str, Any]]:
         """Get all file uploads (for admin view)"""
@@ -1103,16 +1111,22 @@ class DatabaseManager:
             conn = self.get_connection()
             cursor = conn.cursor()
             
-            # Update the website record with submission status and details
+            # Update the website record with submission details
             cursor.execute("""
                 UPDATE websites 
-                SET "submissionStatus" = %s, 
+                SET "submissionStatus" = %s,
                     "submissionResponse" = %s,
                     "submissionError" = %s,
                     "submittedFormFields" = %s,
                     "updatedAt" = CURRENT_TIMESTAMP
                 WHERE id = %s
-            """, (submission_status, response_content, error_message, submitted_form_fields, website_id))
+            """, (
+                submission_status,
+                response_content,
+                error_message,
+                submitted_form_fields,
+                website_id
+            ))
             
             conn.commit()
             cursor.close()
@@ -1389,7 +1403,7 @@ class DatabaseManager:
     
     def create_websites_batch(self, website_data_list: List[Dict[str, Any]]) -> bool:
         """
-        Create multiple websites in batch
+        Create multiple websites in batch with duplicate prevention
         
         Args:
             website_data_list: List of website data dictionaries
@@ -1400,7 +1414,23 @@ class DatabaseManager:
         try:
             self._ensure_connection()
             
+            created_count = 0
+            skipped_count = 0
+            
             for website_data in website_data_list:
+                # Check if website already exists for this fileUploadId and URL
+                self.cursor.execute("""
+                    SELECT id FROM websites 
+                    WHERE "fileUploadId" = %s AND "websiteUrl" = %s
+                """, (website_data['fileUploadId'], website_data['websiteUrl']))
+                
+                existing = self.cursor.fetchone()
+                
+                if existing:
+                    logger.info(f"Website already exists, skipping: {website_data['websiteUrl']}")
+                    skipped_count += 1
+                    continue
+                
                 query = """
                     INSERT INTO websites (
                         id, "userId", "fileUploadId", "websiteUrl", "contactFormUrl",
@@ -1420,9 +1450,10 @@ class DatabaseManager:
                     website_data.get('scrapingStatus', 'PENDING'),
                     website_data.get('messageStatus', 'PENDING')
                 ))
+                created_count += 1
             
             self.conn.commit()
-            logger.info(f"Created {len(website_data_list)} websites in batch")
+            logger.info(f"Created {created_count} new website records, skipped {skipped_count} duplicates")
             return True
             
         except Exception as e:
@@ -1988,4 +2019,26 @@ class DatabaseManager:
             
         except Exception as e:
             logger.error(f"Error getting submission statistics: {e}")
-            return {} 
+            return {}
+    
+    def update_website_industry(self, website_id: str, industry: str, business_type: str, company_name: str) -> bool:
+        """Update website industry, business type, and company name"""
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        UPDATE websites 
+                        SET industry = %s, "businessType" = %s, "companyName" = %s, "updatedAt" = NOW()
+                        WHERE id = %s
+                    """, (industry, business_type, company_name, website_id))
+                    
+                    if cursor.rowcount > 0:
+                        logger.info(f"Updated website {website_id} with industry: {industry}, business_type: {business_type}")
+                        return True
+                    else:
+                        logger.warning(f"No website found with ID {website_id}")
+                        return False
+                        
+        except Exception as e:
+            logger.error(f"Error updating website industry: {e}")
+            return False 

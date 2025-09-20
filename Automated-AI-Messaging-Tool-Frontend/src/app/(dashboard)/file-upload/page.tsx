@@ -562,21 +562,6 @@ https://third-site.com,`;
                   </Alert>
                 )}
 
-                {uploadResult.status === 'PROCESSING' && (
-                  <Stack direction="row" spacing={2} alignItems="center">
-                    <Button
-                      variant="outlined"
-                      startIcon={<RefreshIcon />}
-                      onClick={() => startProgressTracking(uploadResult.id)}
-                      disabled={isTrackingProgress}
-                    >
-                      {isTrackingProgress ? 'Tracking Progress...' : 'Track Progress'}
-                    </Button>
-                    <Button variant="outlined" color="error" startIcon={<CancelIcon />} onClick={cancelProcessing}>
-                      Cancel Processing
-                    </Button>
-                  </Stack>
-                )}
 
                 <Stack direction="row" spacing={2} alignItems="center">
                   <Button variant="contained" color="primary" onClick={() => router.push('/history')}>

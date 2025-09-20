@@ -51,6 +51,7 @@ import {
   FileDownload
 } from '@mui/icons-material';
 import MainCard from '../../../../components/MainCard';
+import { normalizeStatus, getStatusColor } from '../../../../utils/statusUtils';
 
 interface HistoryItem {
   id: string;
@@ -115,30 +116,6 @@ export default function AdminHistoryPage() {
     }
   };
 
-  // Normalize detailed status to generic status for filtering
-  const normalizeStatus = (status: string) => {
-    if (!status) return 'pending';
-    
-    const statusLower = status.toLowerCase();
-    
-    // Completed statuses
-    if (statusLower.includes('completed') || statusLower.includes('success')) {
-      return 'completed';
-    }
-    
-    // Processing statuses
-    if (statusLower.includes('processing') || statusLower.includes('pending')) {
-      return 'processing';
-    }
-    
-    // Error/Failed statuses
-    if (statusLower.includes('error') || statusLower.includes('failed') || statusLower.includes('fail')) {
-      return 'failed';
-    }
-    
-    // Default to pending for unknown statuses
-    return 'pending';
-  };
 
   const filteredData = useMemo(() => {
     if (!historyData || !Array.isArray(historyData)) {
@@ -149,7 +126,7 @@ export default function AdminHistoryPage() {
         (item.fileName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.userName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.userEmail?.toLowerCase().includes(searchTerm.toLowerCase())) &&
-        (statusFilter === 'all' || normalizeStatus(item.status) === statusFilter) &&
+        (statusFilter === 'all' || normalizeStatus(item.status).status === statusFilter) &&
         (userFilter === 'all' || item.userName === userFilter)
     );
   }, [historyData, searchTerm, statusFilter, userFilter]);
@@ -181,10 +158,10 @@ export default function AdminHistoryPage() {
     }
     return [
       { label: 'Total Lists', value: historyData.length, icon: <CloudUpload />, color: 'primary' },
-      { label: 'Pending', value: historyData.filter((f) => normalizeStatus(f.status) === 'pending').length, icon: <Schedule />, color: 'warning' },
-      { label: 'Processing', value: historyData.filter((f) => normalizeStatus(f.status) === 'processing').length, icon: <Autorenew />, color: 'info' },
-      { label: 'Processed', value: historyData.filter((f) => normalizeStatus(f.status) === 'completed').length, icon: <CheckCircle />, color: 'success' },
-      { label: 'Failed', value: historyData.filter((f) => normalizeStatus(f.status) === 'failed').length, icon: <ErrorOutline />, color: 'error' }
+      { label: 'Pending', value: historyData.filter((f) => normalizeStatus(f.status).status === 'pending').length, icon: <Schedule />, color: 'warning' },
+      { label: 'Processing', value: historyData.filter((f) => normalizeStatus(f.status).status === 'processing').length, icon: <Autorenew />, color: 'info' },
+      { label: 'Processed', value: historyData.filter((f) => normalizeStatus(f.status).status === 'completed').length, icon: <CheckCircle />, color: 'success' },
+      { label: 'Failed', value: historyData.filter((f) => normalizeStatus(f.status).status === 'failed').length, icon: <ErrorOutline />, color: 'error' }
     ];
   }, [historyData]);
 
@@ -449,8 +426,8 @@ export default function AdminHistoryPage() {
                   </TableCell>
                   <TableCell>
                     <Chip
-                      label={normalizeStatus(row.status)}
-                      color={normalizeStatus(row.status) === 'completed' ? 'success' : normalizeStatus(row.status) === 'processing' ? 'warning' : 'error'}
+                      label={normalizeStatus(row.status).label}
+                      color={normalizeStatus(row.status).color as any}
                       size="small"
                     />
                   </TableCell>

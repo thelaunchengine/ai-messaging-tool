@@ -41,6 +41,30 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // Get total count for pagination
     const total = await prisma.websites.count({ where });
     
+    // Get overall statistics for all websites in this file upload (not just current page)
+    const overallStats = await prisma.websites.aggregate({
+      where: { fileUploadId: fileUploadId },
+      _count: {
+        id: true
+      }
+    });
+    
+    // Get detailed statistics for all websites in this file upload
+    const allWebsites = await prisma.websites.findMany({
+      where: { fileUploadId: fileUploadId },
+      select: {
+        scrapingStatus: true,
+        messageStatus: true,
+        submissionStatus: true
+      }
+    });
+    
+    // Calculate overall statistics
+    const totalWebsites = allWebsites.length;
+    const scrapedSuccessfully = allWebsites.filter(w => w.scrapingStatus === 'COMPLETED').length;
+    const failed = allWebsites.filter(w => w.scrapingStatus === 'FAILED' || w.messageStatus === 'FAILED').length;
+    const contactFormsSubmitted = allWebsites.filter(w => w.submissionStatus === 'SUBMITTED').length;
+    
     // Get paginated websites
     const websites = await prisma.websites.findMany({
       where,
@@ -85,6 +109,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         pages: Math.ceil(total / limit),
         hasNext: page * limit < total,
         hasPrev: page > 1
+      },
+      statistics: {
+        totalWebsites,
+        scrapedSuccessfully,
+        failed,
+        contactFormsSubmitted
       }
     });
   } catch (error) {

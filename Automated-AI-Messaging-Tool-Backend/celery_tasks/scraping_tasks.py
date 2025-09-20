@@ -27,6 +27,9 @@ from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
+# Import the generate_messages_task to fix the scope issue
+# This will be imported when needed to avoid circular imports
+
 # Configuration for testing limits
 # TESTING_MODE_ENABLED: Set to 'true' to enable testing mode with limited AI message generation
 # MAX_AI_MESSAGES_PER_FILE: Maximum number of AI messages to generate per CSV file (default: 2)
@@ -524,29 +527,41 @@ def extract_company_info(html: str, base_url: str) -> Dict[str, Any]:
         # Look for common industry keywords in the page
         page_text = soup.get_text().lower()
         industry_keywords = {
-            'automotive': ['car', 'auto', 'vehicle', 'dealership', 'dealerships', 'used cars', 'new cars', 'auto sales', 'car sales', 'automotive', 'motor', 'motors', 'express motors'],
-            'technology': ['tech', 'software', 'hardware', 'digital', 'ai', 'artificial intelligence', 'app', 'platform', 'saas', 'cloud'],
-            'e-commerce': ['shop', 'store', 'buy', 'sell', 'retail', 'commerce', 'online store', 'ecommerce'],
-            'finance': ['bank', 'financial', 'investment', 'insurance', 'credit', 'loan', 'mortgage', 'wealth'],
-            'healthcare': ['health', 'medical', 'hospital', 'clinic', 'pharmacy', 'doctor', 'physician', 'dental'],
-            'education': ['school', 'university', 'college', 'education', 'learning', 'academy', 'institute'],
-            'manufacturing': ['manufacturing', 'factory', 'production', 'industrial', 'manufacturer'],
-            'real estate': ['real estate', 'property', 'housing', 'construction', 'realtor', 'broker'],
-            'consulting': ['consulting', 'advisory', 'services', 'solutions', 'consultant'],
-            'restaurant': ['restaurant', 'food', 'dining', 'cafe', 'bistro', 'grill', 'kitchen'],
-            'legal': ['law', 'legal', 'attorney', 'lawyer', 'law firm', 'legal services'],
-            'automotive': ['car', 'auto', 'vehicle', 'dealership', 'dealerships', 'used cars', 'new cars', 'auto sales', 'car sales', 'automotive', 'motor', 'motors', 'express motors']
+            'insurance': ['insurance', 'insurer', 'coverage', 'policy', 'premium', 'claim', 'farmers insurance', 'state farm', 'allstate', 'geico', 'progressive', 'agent', 'broker', 'underwriter'],
+            'automotive': ['car dealership', 'auto dealership', 'used cars', 'new cars', 'auto sales', 'car sales', 'automotive dealer', 'vehicle dealer', 'car lot', 'auto lot'],
+            'technology': ['tech', 'software', 'hardware', 'digital', 'ai', 'artificial intelligence', 'app', 'platform', 'saas', 'cloud', 'cyber', 'data'],
+            'retail': ['shop', 'store', 'buy', 'sell', 'retail', 'commerce', 'online store', 'ecommerce', 'e-commerce', 'merchandise'],
+            'finance': ['bank', 'financial', 'investment', 'credit', 'loan', 'mortgage', 'wealth', 'banking', 'financial services'],
+            'healthcare': ['health', 'medical', 'hospital', 'clinic', 'pharmacy', 'doctor', 'physician', 'dental', 'healthcare', 'medical services'],
+            'education': ['school', 'university', 'college', 'education', 'learning', 'academy', 'institute', 'educational'],
+            'manufacturing': ['manufacturing', 'factory', 'production', 'industrial', 'manufacturer', 'manufacturing company'],
+            'real estate': ['real estate', 'property', 'housing', 'construction', 'realtor', 'broker', 'realty', 'homes for sale'],
+            'consulting': ['consulting', 'advisory', 'services', 'solutions', 'consultant', 'consulting firm'],
+            'restaurant': ['restaurant', 'food', 'dining', 'cafe', 'bistro', 'grill', 'kitchen', 'restaurant', 'food service'],
+            'legal': ['law', 'legal', 'attorney', 'lawyer', 'law firm', 'legal services', 'legal counsel']
         }
         
-        # Check for automotive first (since it's common in our use case)
-        if any(keyword in page_text for keyword in industry_keywords['automotive']):
-            industry = 'Automotive'
-        else:
-            # Check other industries
-            for ind, keywords in industry_keywords.items():
-                if ind != 'automotive' and any(keyword in page_text for keyword in keywords):
-                    industry = ind.title()
-                    break
+        # Check all industries and find the best match
+        industry_scores = {}
+        for ind, keywords in industry_keywords.items():
+            score = sum(1 for keyword in keywords if keyword in page_text)
+            if score > 0:
+                industry_scores[ind] = score
+        
+        # Get the industry with the highest score
+        if industry_scores:
+            best_industry = max(industry_scores, key=industry_scores.get)
+            # Map specific industry names to match frontend filter
+            if best_industry == 'retail':
+                industry = 'Retail'
+            elif best_industry == 'real estate':
+                industry = 'Real Estate'
+            elif best_industry == 'automotive':
+                industry = 'Automotive'
+            elif best_industry == 'insurance':
+                industry = 'Insurance'
+            else:
+                industry = best_industry.title()
     
     # Business Type (try meta tags and content analysis)
     businessType = None
@@ -1031,11 +1046,20 @@ def scrape_with_selenium_fallback(url: str) -> Dict[str, Any]:
     try:
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
+        import tempfile
+        import uuid
+        import time
         
         options = Options()
         options.add_argument('--headless')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
+        
+        # Create unique profile directory to avoid conflicts between workers
+        unique_id = str(uuid.uuid4())[:8]
+        timestamp = str(int(time.time() * 1000))
+        profile_dir = tempfile.mkdtemp(prefix=f'chrome_scraping_{unique_id}_{timestamp}_')
+        options.add_argument(f'--user-data-dir={profile_dir}')
         
         driver = webdriver.Chrome(options=options)
         driver.set_page_load_timeout(30)
@@ -1048,6 +1072,13 @@ def scrape_with_selenium_fallback(url: str) -> Dict[str, Any]:
         content = driver.page_source
         driver.quit()
         
+        # Clean up profile directory
+        try:
+            import shutil
+            shutil.rmtree(profile_dir, ignore_errors=True)
+        except:
+            pass
+        
         return {
             'success': True,
             'content': content,
@@ -1056,11 +1087,18 @@ def scrape_with_selenium_fallback(url: str) -> Dict[str, Any]:
         }
         
     except Exception as e:
+        # Clean up profile directory on error
+        try:
+            import shutil
+            shutil.rmtree(profile_dir, ignore_errors=True)
+        except:
+            pass
+        
         return {
             'success': False,
             'error': f"Selenium fallback failed: {str(e)}",
             'url': url
-    }
+        }
 
 def scrape_website_data(url: str) -> Dict[str, Any]:
     """
@@ -1429,11 +1467,11 @@ def scrape_websites_task(self, fileUploadId: str, userId: str, websites: List[st
                         
                         if website_record:
                             # Start AI message generation task for this individual website
-                            message_task = generate_messages_task.delay(
-                                website_data=[website_record],  # Single website
-                                message_type="general",
-                                fileUploadId=fileUploadId,
-                                userId=userId
+                            # Use apply_async to avoid circular imports and get task ID
+                            message_task = celery_app.send_task(
+                                'celery_tasks.scraping_tasks.generate_messages_task',
+                                args=[[website_record], "general", fileUploadId, userId],
+                                kwargs={}
                             )
                             logger.info(f"AI message generation task started for {website}: {message_task.id}")
                             
@@ -1442,15 +1480,11 @@ def scrape_websites_task(self, fileUploadId: str, userId: str, websites: List[st
                                 try:
                                     logger.info(f"Starting contact form submission for {website}")
                                     
-                                                                        # Import contact form submission task
-                                    from celery_tasks.form_submission_tasks import submit_contact_forms_task
-                                    
                                     # Start contact form submission task for this individual website
-                                    submission_task = submit_contact_forms_task.delay(
-                                        website_data=[website_record],  # Single website
-                                        message_type="general",
-                                        fileUploadId=fileUploadId,
-                                        userId=userId
+                                    submission_task = celery_app.send_task(
+                                        'celery_tasks.form_submission_tasks.submit_contact_forms_task',
+                                        args=[[website_record], "general", fileUploadId, userId],
+                                        kwargs={}
                                     )
                                     logger.info(f"Contact form submission task started for {website}: {submission_task.id}")
                                     
@@ -1511,13 +1545,10 @@ def scrape_websites_task(self, fileUploadId: str, userId: str, websites: List[st
                 
                 if successful_websites:
                     # Trigger AI message generation automatically
-                    from celery_tasks.scraping_tasks import generate_messages_task
-                    
-                    ai_task = generate_messages_task.delay(
-                        website_data=successful_websites,
-                        message_type="general",
-                        fileUploadId=fileUploadId,
-                        userId=userId
+                    ai_task = celery_app.send_task(
+                        'celery_tasks.scraping_tasks.generate_messages_task',
+                        args=[successful_websites, "general", fileUploadId, userId],
+                        kwargs={}
                     )
                     
                     logger.info(f"✅ AI message generation automatically triggered with task ID: {ai_task.id}")
@@ -1569,11 +1600,31 @@ def scrape_websites_task(self, fileUploadId: str, userId: str, websites: List[st
         
         # Update job status to FAILED
         if job_id:
-            db_manager = DatabaseManager()
-            db_manager.update_scraping_job_status(job_id, "FAILED")
+            try:
+                db_manager = DatabaseManager()
+                db_manager.update_scraping_job_status(job_id, "FAILED")
+            except Exception as db_error:
+                logger.error(f"Failed to update job status: {db_error}")
         
-        # Re-raise the exception to mark task as failed
-        raise
+        # Update file upload status to FAILED
+        try:
+            db_manager = DatabaseManager()
+            db_manager.update_file_upload(fileUploadId, {
+                'status': 'SCRAPING_FAILED',
+                'processingCompletedAt': datetime.now().isoformat()
+            })
+        except Exception as update_error:
+            logger.error(f"Failed to update file upload status: {update_error}")
+        
+        # Return error result instead of raising exception to prevent serialization issues
+        return {
+            'status': 'error',
+            'error': str(e),
+            'totalWebsites': 0,
+            'processedWebsites': 0,
+            'failedWebsites': 0,
+            'websites': []
+        }
 
 @celery_app.task(bind=True)
 def scrape_websites_async_task(self, fileUploadId: str, userId: str, websites: List[str], job_id: str = None):
@@ -1656,11 +1707,11 @@ async def scrape_websites_async(fileUploadId: str, userId: str, websites: List[s
                         
                         if website_record:
                             # Start AI message generation task for this individual website
-                            message_task = generate_messages_task.delay(
-                                website_data=[website_record],  # Single website
-                                message_type="general",
-                                fileUploadId=fileUploadId,
-                                userId=userId
+                            # Use apply_async to avoid circular imports and get task ID
+                            message_task = celery_app.send_task(
+                                'celery_tasks.scraping_tasks.generate_messages_task',
+                                args=[[website_record], "general", fileUploadId, userId],
+                                kwargs={}
                             )
                             logger.info(f"AI message generation task started for {website}: {message_task.id}")
                             
@@ -1669,15 +1720,11 @@ async def scrape_websites_async(fileUploadId: str, userId: str, websites: List[s
                                 try:
                                     logger.info(f"Starting contact form submission for {website}")
                                     
-                                    # Import contact form submission task
-                                    from celery_tasks.form_submission_tasks import submit_contact_forms_task
-                                    
                                     # Start contact form submission task for this individual website
-                                    submission_task = submit_contact_forms_task.delay(
-                                        website_data=[website_record],  # Single website
-                                        message_type="general",
-                                        fileUploadId=fileUploadId,
-                                        userId=userId
+                                    submission_task = celery_app.send_task(
+                                        'celery_tasks.form_submission_tasks.submit_contact_forms_task',
+                                        args=[[website_record], "general", fileUploadId, userId],
+                                        kwargs={}
                                     )
                                     logger.info(f"Contact form submission task started for {website}: {submission_task.id}")
                                     
@@ -1861,10 +1908,10 @@ def generate_messages_task(self, website_data: List[Dict], message_type: str = "
                         
                         if successful_websites:
                             # Trigger contact form submission automatically
-                            from celery_tasks.form_submission_tasks import submit_contact_forms_task
-                            
-                            contact_task = submit_contact_forms_task.delay(
-                                websites_with_messages=successful_websites
+                            contact_task = celery_app.send_task(
+                                'celery_tasks.form_submission_tasks.submit_contact_forms_task',
+                                args=[successful_websites, "general", fileUploadId, userId],
+                                kwargs={}
                             )
                             
                             logger.info(f"✅ Contact form submission automatically triggered with task ID: {contact_task.id}")
@@ -1926,7 +1973,28 @@ def generate_messages_task(self, website_data: List[Dict], message_type: str = "
         
     except Exception as e:
         logger.error(f"Error in message generation task: {str(e)}")
-        raise
+        
+        # Update file upload status to show AI generation failed
+        if fileUploadId:
+            try:
+                db_manager = DatabaseManager()
+                db_manager.update_file_upload(fileUploadId, {
+                    'status': 'AI_GENERATION_FAILED',
+                    'processingCompletedAt': datetime.now().isoformat()
+                })
+            except Exception as update_error:
+                logger.error(f"Failed to update file upload status: {update_error}")
+        
+        # Return error result instead of raising exception to prevent serialization issues
+        return {
+            'status': 'error',
+            'error': str(e),
+            'totalWebsites': 0,
+            'processedWebsites': 0,
+            'failedWebsites': 0,
+            'messages_generated': 0,
+            'messages': []
+        }
 
 def generate_ai_message(website_data: Dict, message_type: str = "general") -> Tuple[str, float]:
     """

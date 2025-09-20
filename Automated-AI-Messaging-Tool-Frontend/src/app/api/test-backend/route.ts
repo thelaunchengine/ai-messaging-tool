@@ -4,7 +4,7 @@ export async function GET(request: NextRequest) {
   try {
     console.log('=== TEST BACKEND START ===');
     
-    const backendUrl = process.env.PYTHON_API_URL || 'http://production-ai-messaging-alb-746376383.us-east-1.elb.amazonaws.com:8001';
+    const backendUrl = process.env.PYTHON_API_URL || 'http://98.85.16.204:8001';
     
     console.log('Testing backend health endpoint...');
     const healthResponse = await fetch(`${backendUrl}/health`, {

@@ -21,9 +21,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       // For testing purposes, temporarily bypass authentication
       // TODO: Re-enable authentication in production
-      setIsAuthenticated(true);
-      setIsLoading(false);
-      return;
+      // setIsAuthenticated(true);
+      // setIsLoading(false);
+      // return;
 
       const adminToken = localStorage.getItem('adminToken');
       const adminUser = localStorage.getItem('adminUser');
